@@ -100,6 +100,9 @@
    - `CRON_SECRET`：一串很长的随机字符
 3. **Deploys → Trigger deploy** 重新部署一次
 4. **Site configuration → Access & security → Visitor access** 确认没有开启“只有团队成员能访问”
+5. 带保密标记（*Contains secret values*）的变量，作用范围要选 **Production**（保密值不能用在本地开发环境，选“所有环境”会保存失败）
+
+> `netlify.toml` 里写明了 Netlify 的 Next.js 运行环境（`@netlify/plugin-nextjs`）。不要删：通过上传方式部署时，Netlify 不会自动加上它，网站会整站显示 404。
 
 每小时的提醒邮件和每晚自检由 `netlify/functions/cron.mjs` 自动运行，不需要另外设置。
 
@@ -168,6 +171,10 @@ npm run e2e                                      # 浏览器全流程 + 无障�
   DATABASE_URL=… node scripts/loadtest.mjs http://localhost:3200 demo-nails 40
   ```
   40 个客人同时抢同一个时间，只有能做的人数那么多会成功，其余收到“刚被约走”，不能出现服务器错误或重复预约。**正式网站绝对不要设置 `LOADTEST_DISABLE_RATE_LIMIT`。**
+- **线上冒烟测试**（只用浏览器，不碰数据库）：在正式网站上走一遍注册 → 开店 → 审核 → 预约 → 改时间 → 取消 → 重新登录。会留下一家名字以 `live-test-` 开头的测试店和两个账号，测完要手动删掉
+  ```bash
+  LIVE_URL=https://你的网址 LIVE_ADMIN_EMAIL=管理员邮箱 LIVE_SETUP_CODE=管理员注册码 npx playwright test -c e2e/live/live.config.ts
+  ```
 
 ### 试点
 三家店怎么试点、现场收集什么、访谈问题、客人测试脚本和 SUS 问卷、双轨对账流程、成功和停止的标准：见 `docs/试点手册.md`。
