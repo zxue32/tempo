@@ -70,74 +70,55 @@
 
 ---
 
-## 免费部署（大约 30 分钟）
+## 部署（全部免费）
 
-需要四个免费账号：**GitHub**（放代码）、**Supabase**（数据库、登录、图片）、**Netlify**（网站）、**Resend**（发邮件，可选）。
+用到三个免费服务：**GitHub**（放代码）、**Supabase**（数据库，照片也存在里面）、**Netlify**（网站和每小时的定时任务）。发邮件用 **Resend**，可选。登录是网站自己做的（邮箱 + 密码），不依赖 Supabase 的登录功能，所以 Supabase 后台不用做任何设置。
 
 > 为什么用 Netlify 而不是 Vercel：Vercel 的免费版只允许非商业用途，Netlify 的免费版允许商业用途。
 
-### 第 1 步：把代码放到 GitHub
-1. 在 GitHub 新建一个**私有**仓库（例如 `tempo`）
-2. 把这个文件夹里的所有文件上传进去（`.env.local` 不要上传，`.gitignore` 已经排除了）
-
-### 第 2 步：Supabase（数据库 + 登录 + 图片）
-1. 打开 [supabase.com](https://supabase.com)，新建项目。区域选离你的店最近的（美国东部选 `East US`）。**数据库密码记下来**
-2. 拿数据库地址：点项目顶部的 **Connect**
-   - **Transaction pooler**（端口 6543）→ 填到 `DATABASE_URL`
-   - **Session pooler**（端口 5432）→ 填到 `DIRECT_DATABASE_URL`
-   - 把地址里的 `[YOUR-PASSWORD]` 换成你的数据库密码
-3. 建表：在自己电脑上（需要先装 [Node.js 22](https://nodejs.org)）
+### 第 1 步：数据库（Supabase）
+1. 在 [supabase.com](https://supabase.com) 新建项目，区域选离店最近的（美国东部选 `East US`）
+2. 点项目顶部的 **Connect**，拿两个地址：
+   - **Transaction pooler**（端口 6543）→ `DATABASE_URL`
+   - **Session pooler**（端口 5432）→ `DIRECT_DATABASE_URL`
+3. 建表：在自己电脑上（需要 [Node.js 22](https://nodejs.org)）
    ```bash
    npm install
-   cp .env.example .env.local     # 然后把上面两个数据库地址填进去
+   cp .env.example .env.local     # 填上面两个地址
    npm run db:migrate
    ```
-   看到 `done, 2 migration(s) applied` 就成功了。以后每次更新代码，都再跑一次 `npm run db:migrate`（已经建好的部分会自动跳过）
-4. 登录设置：**Authentication → URL Configuration**
-   - Site URL：你的网站地址（第 3 步拿到后再回来填，例如 `https://tempo-xxx.netlify.app`）
-   - Redirect URLs：添加 `https://你的网址/auth/callback`
-5. 拿 API 钥匙：**Project Settings → API Keys**
-   - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
-   - Publishable key（`sb_publishable_…`）→ `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-   - Secret key（`sb_secret_…`）→ `SUPABASE_SECRET_KEY`（**只放在服务器端，不要公开**）
-6. 图片：**Storage → New bucket**，名字 `media`，勾选 **Public bucket**
+   以后每次更新代码都再跑一次，已经建好的部分会自动跳过
 
-> Supabase 自带的登录邮件每小时只能发很少几封。正式使用前，建议在 **Authentication → Emails → SMTP Settings** 里填 Resend 的 SMTP（见第 4 步），这样注册确认、找回密码邮件不会被限流。
+### 第 2 步：网站（Netlify）
+1. [netlify.com](https://www.netlify.com) → **Add new site → Import an existing project** → 选 GitHub 仓库。构建设置已经写在 `netlify.toml` 里
+2. **Site configuration → Environment variables**，按 `.env.example` 添加：
+   - `DATABASE_URL`、`DIRECT_DATABASE_URL`（勾选 *Contains secret values*）
+   - `NEXT_PUBLIC_SITE_URL`：网站地址，不要以 `/` 结尾
+   - `PLATFORM_ADMIN_EMAILS`：你自己的邮箱
+   - `ADMIN_SETUP_CODE`：一串只有你知道的字符，注册管理员账号时要填
+   - `CRON_SECRET`：一串很长的随机字符
+3. **Deploys → Trigger deploy** 重新部署一次
+4. **Site configuration → Access & security → Visitor access** 确认没有开启“只有团队成员能访问”
 
-### 第 3 步：Netlify（网站）
-1. 打开 [netlify.com](https://www.netlify.com)，用 GitHub 登录 → **Add new site → Import an existing project** → 选你的仓库
-2. 构建设置会自动识别（`netlify.toml` 已经写好），直接部署
-3. **Site configuration → Environment variables**，把 `.env.example` 里的变量一个个加进去（`DEV_FAKE_AUTH` 不要加）
-   - `NEXT_PUBLIC_SITE_URL` 填 Netlify 给你的网址（或者你自己的域名）
-   - `PLATFORM_ADMIN_EMAILS` 填你自己的邮箱
-   - `CRON_SECRET` 填一串很长的随机字符
-4. 加完变量后 **Deploys → Trigger deploy** 重新部署一次
-5. 回到 Supabase 第 2 步第 4 点，把网址填上
+每小时的提醒邮件和每晚自检由 `netlify/functions/cron.mjs` 自动运行，不需要另外设置。
 
-### 第 4 步：Resend（邮件，可选但强烈建议）
-1. 打开 [resend.com](https://resend.com) 注册，免费版每天 100 封、每月 3000 封
-2. **API Keys** → 新建 → 填到 `RESEND_API_KEY`
-3. 有自己的域名：**Domains** 里添加并按提示加 DNS 记录，`EMAIL_FROM` 写 `店名 <bookings@你的域名>`
-4. 还没有域名：`EMAIL_FROM` 先写 `Tempo <onboarding@resend.dev>`，这时只能发到你自己的邮箱，适合测试
-5. 不填 `RESEND_API_KEY` 也能正常预约，只是不发邮件
+### 第 3 步：邮件（Resend，可选但建议）
+1. [resend.com](https://resend.com) 注册，免费版每天 100 封
+2. **API Keys** → 新建 → 填到 Netlify 的 `RESEND_API_KEY`
+3. 有自己的域名：在 **Domains** 里验证，`EMAIL_FROM` 写 `店名 <bookings@你的域名>`；还没有域名时先写 `Tempo <onboarding@resend.dev>`（只能发给你自己）
+4. 不设置也能正常预约，只是不发邮件。忘记密码时，由你在 `/admin` → **账号** 里生成一次性的重设密码链接，发给对方
 
-### 第 5 步：前一天提醒邮件（GitHub Actions，免费）
-仓库里已经有 `.github/workflows/reminders.yml`，每小时自动运行一次。
-1. GitHub 仓库 → **Settings → Secrets and variables → Actions → New repository secret**
-   - `SITE_URL`：你的网址（不要以 `/` 结尾）
-   - `CRON_SECRET`：和 Netlify 里一样的值
-2. **Actions** 页面里可以手动点 **Run workflow** 测试一次
-
-> Supabase 免费项目一周没有任何访问会自动暂停。每小时的提醒任务会访问一次数据库，一般可以避免暂停；如果真的被暂停，在 Supabase 后台点一下恢复就行。
+> Supabase 免费项目一周没有任何访问会自动暂停。每小时的定时任务会访问一次数据库，一般不会被暂停；真的暂停了，在 Supabase 后台点一下恢复就行。
 
 ---
 
 ## 上线后怎么用
 
 ### 你（平台管理员）
-1. 用 `PLATFORM_ADMIN_EMAILS` 里的邮箱注册并登录，打开 `/admin`
-2. **邀请码 → 新建**，备注写店名，把生成的邀请链接发给已经谈好的店
+1. 打开 `/signup`，用 `PLATFORM_ADMIN_EMAILS` 里的邮箱注册，展开“我是平台管理员”，填 `ADMIN_SETUP_CODE`。只有同时满足这两点的账号才有管理员权限
+2. 打开 `/admin` → **邀请码 → 新建**，备注写店名，把生成的链接发给已经谈好的店
 3. 没有邀请码自己注册的店，提交后会出现在“待审核”，你检查后点“通过，上线”
+4. **账号**：查看所有账号，帮忘记密码的人生成重设链接，停用账号
 
 ### 店主
 1. 打开邀请链接注册 → 填店名、链接、地址、时区 → 创建
@@ -146,7 +127,7 @@
 4. 在“预约链接”页面复制链接、下载二维码，放到 Instagram、Google 地图、门口
 
 ### 技师
-店主在“员工”页面输入技师的邮箱发邀请，技师用这个邮箱注册后，打开手机就能看到“我的日程”。
+店主在“员工”页面打开某位技师 → **生成加入链接**，用短信或微信发给她。她打开链接、注册或登录、点“加入”，手机上就能看到“我的日程”。链接只能用一次；发错了就再生成一个，旧的会失效。
 
 ---
 
@@ -155,17 +136,18 @@
 ```bash
 npm install
 cp .env.example .env.local
-# 只填 DATABASE_URL 和 DIRECT_DATABASE_URL（可以用本地 Postgres），再加一行：
-# DEV_FAKE_AUTH=1        ← 不用 Supabase，输入邮箱就能登录
+# 只填 DATABASE_URL 和 DIRECT_DATABASE_URL（可以用本地 Postgres），再加：
 # PLATFORM_ADMIN_EMAILS=admin@example.com
+# ADMIN_SETUP_CODE=任意字符
+# DEV_FAKE_AUTH=1        ← 可选：输入邮箱就能登录，不用密码（只在开发模式有效）
 npm run db:migrate
 npm run dev
 ```
-打开 http://localhost:3000 。开发模式下没有配置 Supabase 时，图片会存在 `.uploads/` 文件夹，邮件内容会打印在终端里。
+打开 http://localhost:3000 。上传的照片存在数据库里（设置了 `SUPABASE_URL` 和 `SUPABASE_SECRET_KEY` 时改存 Supabase Storage），没有设置 Resend 时邮件内容会打印在终端里。
 
 ### 示范店
 ```bash
-DATABASE_URL=postgres://… node scripts/seed-demo.mjs demo-nails 你的邮箱
+DATABASE_URL=postgres://… OWNER_PASSWORD=店主密码 node scripts/seed-demo.mjs demo-nails 你的邮箱
 ```
 生成一家已上线的“Demo Nails”：3 位技师、5 个服务、3 周排班，可以直接打开 `/demo-nails` 试约。
 
@@ -210,6 +192,8 @@ src/app/b/[token]/    客人的预约管理页（改时间、取消）
 src/app/dashboard/    店主后台
 src/app/admin/        平台管理员后台
 src/app/api/          给前端用的接口、提醒邮件定时任务
+src/lib/accounts.ts   账号、登录会话、重设密码链接
+netlify/functions/    每小时运行的定时任务
 tests/  e2e/          自动测试
 ```
 
