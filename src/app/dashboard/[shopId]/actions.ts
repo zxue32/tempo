@@ -1,4 +1,5 @@
 'use server'
+import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { randomBytes } from 'node:crypto'
 import { requireShop } from '@/lib/auth'
@@ -7,7 +8,7 @@ import { getShop, submitShop, updateShop, readiness, type ShopPatch } from '@/li
 import { createStaff, updateStaff, deleteStaff, setStaffSkills, reorderStaff, createService, updateService, deleteService, reorderServices, listStaff } from '@/lib/data/catalog'
 import { saveShifts, upsertSpecialDay, deleteSpecialDay } from '@/lib/data/schedule'
 import { createBooking, shopMove, shopSetStatus, shopSetItems, shopUpdateDetails, shopMarkStarted, getBooking, bookingEvents, BookingError, normPhone } from '@/lib/bookings'
-import { saveResource, deleteResource, addGalleryItem, updateGalleryItem, deleteGalleryItem, reorderGallery } from '@/lib/data/rules'
+import { saveResource, deleteResource, addGalleryItem, updateGalleryItem, deleteGalleryItem, reorderGallery, listPalette, saveSwatch, deleteSwatch, reorderPalette } from '@/lib/data/rules'
 import { integrityCheck } from '@/lib/data/pilot'
 import { markWaitlist } from '@/lib/data/waitlist'
 import { notifyWaitlist } from '@/lib/waitlistNotify'
@@ -465,7 +466,12 @@ export async function uploadGalleryAction(shopId: string, form: FormData): Promi
   }
 }
 
-const galleryPatch = z.object({ captionEn: z.string().trim().max(200), captionZh: z.string().trim().max(200), staffId: uuid.nullable(), serviceId: uuid.nullable() })
+const tagsSchema = z.object({
+  length: z.enum(['short', 'medium', 'long']).optional(),
+  style: z.array(z.string().regex(/^[a-z]{2,16}$/)).max(6).optional(),
+  colorId: uuid.optional(),
+}).strict()
+const galleryPatch = z.object({ captionEn: z.string().trim().max(200), captionZh: z.string().trim().max(200), staffId: uuid.nullable(), serviceId: uuid.nullable(), tags: tagsSchema.optional() })
 
 export async function updateGalleryAction(shopId: string, id: string, input: z.input<typeof galleryPatch>): Promise<Result> {
   await requireShop(shopId, 'manager')
@@ -485,6 +491,47 @@ export async function deleteGalleryAction(shopId: string, id: string): Promise<R
 export async function reorderGalleryAction(shopId: string, ids: string[]): Promise<Result> {
   await requireShop(shopId, 'manager')
   await reorderGallery(shopId, ids.filter(i => uuid.safeParse(i).success))
+  return { ok: true }
+}
+
+// ---------------------------------------------------------------- colour palette
+
+const swatchSchema = z.object({
+  kind: z.enum(['hair', 'nail']),
+  name: z.string().trim().min(1).max(60),
+  nameZh: z.string().trim().max(60),
+  code: z.string().trim().max(40),
+  hex: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  hex2: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
+  active: z.boolean(),
+})
+
+export async function saveSwatchAction(shopId: string, id: string | null, input: z.input<typeof swatchSchema>, form?: FormData): Promise<Result<{ id: string }>> {
+  await requireShop(shopId, 'manager')
+  const p = swatchSchema.safeParse(input)
+  if (!p.success || (id && !uuid.safeParse(id).success)) return fail('invalid')
+  let photoUrl: string | null | undefined = undefined
+  const file = form?.get('file')
+  if (file instanceof File && file.size > 0) {
+    try { photoUrl = await storeImage(file, `palette/${shopId}`) } catch (e) { return fail('upload', e instanceof UploadError ? e.message : 'server') }
+  }
+  const existing = id ? (await listPalette(shopId)).find(x => x.id === id) : null
+  const row = await saveSwatch(shopId, id, { ...p.data, nameZh: p.data.nameZh || null, code: p.data.code || null, photoUrl: photoUrl ?? existing?.photoUrl ?? null })
+  if (!row) return fail('limit')
+  revalidatePath(`/dashboard/${shopId}/palette`)
+  return { ok: true, id: row.id }
+}
+
+export async function deleteSwatchAction(shopId: string, id: string): Promise<Result> {
+  await requireShop(shopId, 'manager')
+  if (!uuid.safeParse(id).success) return fail('invalid')
+  await deleteSwatch(shopId, id)
+  return { ok: true }
+}
+
+export async function reorderPaletteAction(shopId: string, ids: string[]): Promise<Result> {
+  await requireShop(shopId, 'manager')
+  await reorderPalette(shopId, ids.filter(i => uuid.safeParse(i).success))
   return { ok: true }
 }
 

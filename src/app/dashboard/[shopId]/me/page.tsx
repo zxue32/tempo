@@ -11,6 +11,7 @@ import { addDays, fmtDate, fmtDuration, fmtTime, isDateString, mondayOf, nowInZo
 import { BookingStatusChip } from '@/components/ui'
 import { Initial } from '@/components/store'
 import { MeActions } from './MeActions'
+import { NailArt, describeDesign } from '@/components/NailArt'
 
 export default async function MyDay(props: PageProps<'/dashboard/[shopId]/me'>) {
   const { shopId } = await props.params
@@ -161,6 +162,7 @@ export default async function MyDay(props: PageProps<'/dashboard/[shopId]/me'>) 
                 {b.anyStaff && <span className="text-[12.5px] text-muted">{t('cal.anyStaff')}</span>}
                 {b.notes && <p className="whitespace-pre-wrap rounded-lg bg-bg px-3 py-2 text-[14px]">“{b.notes}”</p>}
                 {b.internalNote && <p className="whitespace-pre-wrap text-[13px] text-muted">{t('cal.internalNote')}: {b.internalNote}</p>}
+                {b.design && <div className="flex items-center gap-3"><NailArt design={b.design} size={120} uid={'me' + b.id.slice(0, 6)} /><span className="text-[12.5px] text-muted">{describeDesign(b.design, t as (k: string) => string)}</span></div>}
                 {b.photoUrl && (
                   <a href={b.photoUrl} target="_blank" rel="noreferrer" className="self-start">
                     {/* eslint-disable-next-line @next/next/no-img-element */}

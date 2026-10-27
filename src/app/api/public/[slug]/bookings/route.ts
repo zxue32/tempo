@@ -9,6 +9,7 @@ import { mailCustomer, mailShop } from '@/lib/email'
 import { env } from '@/lib/env'
 import { sql } from '@/lib/db'
 import { recordFunnel } from '@/lib/data/pilot'
+import { isNailDesign } from '@/components/NailArt'
 
 const body = z.object({
   guests: guestsSchema,
@@ -22,6 +23,7 @@ const body = z.object({
   lang: z.enum(['zh', 'en']),
   website: z.string().optional(), // honeypot: real people never fill this
   lookId: z.string().uuid().nullable().optional(), // "book this look" from the gallery
+  design: z.unknown().optional(),                   // "design your nails"; validated below
   session: z.string().regex(/^[A-Za-z0-9_-]{8,40}$/).optional(),
 })
 
@@ -53,7 +55,7 @@ export async function POST(req: Request, ctx: RouteContext<'/api/public/[slug]/b
     const res = await createBooking({
       shop, mode: 'online', kind: 'online', date: d.date, start: d.start, guests: d.guests,
       contact: { name: d.name, phone: d.phone, email: d.email.toLowerCase() },
-      notes: trimOrNull(d.notes, 1000), photoUrl, lang: d.lang,
+      notes: trimOrNull(d.notes, 1000), photoUrl, lang: d.lang, design: isNailDesign(d.design) ? d.design : null,
     })
     if (d.session) await recordFunnel(shop.id, d.session, 'booked').catch(() => {})
     // someone on the waitlist who now booked that day no longer needs to wait

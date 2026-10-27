@@ -1,7 +1,7 @@
 import 'server-only'
 import { randomBytes, randomInt } from 'node:crypto'
 import { sql, isOverlapViolation, type Tx } from './db'
-import type { Shop, Booking, BookingItem, BookingKind, BookingStatus, Lang, Service } from './types'
+import type { Shop, Booking, BookingItem, BookingKind, BookingStatus, Lang, Service, NailDesign } from './types'
 import { loadCatalog, type Catalog } from './data/catalog'
 import { buildDays } from './availability'
 import { findSlots, blocker, guestDuration, qualifies, guestResources, resourceConflict, type GuestRequest, type Assignment } from './engine'
@@ -38,6 +38,8 @@ export type CreateInput = {
   contact: Contact | null
   notes?: string | null
   photoUrl?: string | null
+  /** what the client made in "design your nails" (first booking of the group) */
+  design?: NailDesign | null
   lang: Lang
   createdBy?: string | null
   /** shop staff may book outside the roster (never on top of another booking) */
@@ -206,13 +208,13 @@ export async function createBooking(input: CreateInput): Promise<CreateResult> {
           const [row] = await tx<Booking[]>`
             insert into app.bookings (shop_id, staff_id, customer_id, group_id, code, kind, status, date, start_min, end_min,
               starts_at, ends_at, busy_until, duration_min, guest_name, guest_phone, guest_email, notes, photo_url, any_staff,
-              est_price_cents, lang, manage_token, created_by, resource_ids)
+              est_price_cents, lang, manage_token, created_by, resource_ids, design)
             values (${shop.id}, ${a.staffId}, ${customer?.id ?? null}, ${groupId}, ${code}, ${input.kind}, 'confirmed', ${input.date},
               ${input.start}, ${input.start + a.duration}, ${startsAt}, ${endsAt}, ${busyUntil}, ${a.duration},
               ${name}, ${input.contact?.phone ?? null}, ${input.contact?.email ?? null}, ${input.notes ?? null},
               ${i === 0 ? input.photoUrl ?? null : null}, ${input.kind !== 'block' && guest?.staffId === null},
               ${input.kind === 'block' ? null : est}, ${input.lang}, ${wantsToken && i === 0 ? makeToken() : null}, ${input.createdBy ?? null},
-              ${tx.array(input.kind === 'block' ? [] : guestResources(day, guest))}::uuid[])
+              ${tx.array(input.kind === 'block' ? [] : guestResources(day, guest))}::uuid[], ${i === 0 && input.design ? tx.json(input.design) : null})
             returning *
           `
           for (const it of items) {

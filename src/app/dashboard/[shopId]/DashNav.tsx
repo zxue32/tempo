@@ -18,6 +18,7 @@ export function DashNav({ shopId, role, slug }: { shopId: string; role: string; 
     ['/services', 'd.services', false],
     ['/rules', 'd.rules', false],
     ['/gallery', 'd.gallery', false],
+    ['/palette', 'd.palette', false],
     ['/reports', 'd.reports', false],
     ['/pilot', 'd.pilot', false],
     ['/share', 'd.share', false],

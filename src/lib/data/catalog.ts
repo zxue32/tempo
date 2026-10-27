@@ -37,15 +37,18 @@ export type StaffInput = {
   bookableOnline: boolean
   commissionPct: number
   defaultWeek?: Record<string, { start: number; end: number; breaks: Break[] }>
+  publicPage?: boolean
+  specialties?: string[]
+  specialtiesZh?: string[]
 }
 
 export async function createStaff(shopId: string, input: StaffInput): Promise<string> {
   const [{ n }] = await sql<{ n: number }[]>`select coalesce(max(sort), -1)::int + 1 as n from app.staff where shop_id = ${shopId}`
   const [row] = await sql<{ id: string }[]>`
-    insert into app.staff (shop_id, name, name_zh, bio_en, bio_zh, color, photo_url, active, bookable_online, commission_pct, sort, default_week)
+    insert into app.staff (shop_id, name, name_zh, bio_en, bio_zh, color, photo_url, active, bookable_online, commission_pct, sort, default_week, public_page, specialties, specialties_zh)
     values (${shopId}, ${input.name}, ${input.nameZh ?? null}, ${input.bioEn ?? null}, ${input.bioZh ?? null}, ${input.color},
             ${input.photoUrl ?? null}, ${input.active}, ${input.bookableOnline}, ${input.commissionPct}, ${n},
-            ${sql.json(input.defaultWeek ?? {})})
+            ${sql.json(input.defaultWeek ?? {})}, ${input.publicPage ?? true}, ${input.specialties ?? []}, ${input.specialtiesZh ?? []})
     returning id
   `
   return row.id

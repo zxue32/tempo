@@ -7,10 +7,11 @@ import { downscale } from '@/components/downscale'
 import { pick } from '@/lib/i18n'
 import { uploadGalleryAction, updateGalleryAction, deleteGalleryAction, reorderGalleryAction } from '../actions'
 
-type Item = { id: string; url: string; captionEn: string; captionZh: string; staffId: string; serviceId: string }
+type Tags = { length?: 'short' | 'medium' | 'long'; style?: string[]; colorId?: string }
+type Item = { id: string; url: string; captionEn: string; captionZh: string; staffId: string; serviceId: string; tags: Tags }
 type Opt = { id: string; name: string; nameZh: string | null }
 
-export function GalleryEditor({ shopId, max, items, staff, services }: { shopId: string; max: number; items: Item[]; staff: Opt[]; services: Opt[] }) {
+export function GalleryEditor({ shopId, max, items, staff, services, styleTags, colors }: { shopId: string; max: number; items: Item[]; staff: Opt[]; services: Opt[]; styleTags: string[]; colors: Opt[] }) {
   const { t } = useI18n()
   const router = useRouter()
   const toast = useToast()
@@ -60,7 +61,7 @@ export function GalleryEditor({ shopId, max, items, staff, services }: { shopId:
       {items.length === 0 ? <p className="text-muted">{t('ga.empty')}</p> : (
         <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((it, i) => (
-            <GalleryCard key={it.id} shopId={shopId} item={it} staff={staff} services={services} first={i === 0} last={i === items.length - 1}
+            <GalleryCard key={it.id} shopId={shopId} item={it} staff={staff} services={services} styleTags={styleTags} colors={colors} first={i === 0} last={i === items.length - 1}
               onMove={d => move(i, d)} onSaved={() => toast.show(t('c.saved'))} onDeleted={() => router.refresh()} />
           ))}
         </ul>
@@ -70,8 +71,8 @@ export function GalleryEditor({ shopId, max, items, staff, services }: { shopId:
   )
 }
 
-function GalleryCard({ shopId, item, staff, services, first, last, onMove, onSaved, onDeleted }: {
-  shopId: string; item: Item; staff: Opt[]; services: Opt[]; first: boolean; last: boolean; onMove: (d: -1 | 1) => void; onSaved: () => void; onDeleted: () => void
+function GalleryCard({ shopId, item, staff, services, styleTags, colors, first, last, onMove, onSaved, onDeleted }: {
+  shopId: string; item: Item; staff: Opt[]; services: Opt[]; styleTags: string[]; colors: Opt[]; first: boolean; last: boolean; onMove: (d: -1 | 1) => void; onSaved: () => void; onDeleted: () => void
 }) {
   const { t, lang } = useI18n()
   const [v, setV] = useState(item)
@@ -79,7 +80,11 @@ function GalleryCard({ shopId, item, staff, services, first, last, onMove, onSav
   const [pending, start] = useTransition()
   const dirty = JSON.stringify(v) !== JSON.stringify(saved)
   const save = () => start(async () => {
-    const r = await updateGalleryAction(shopId, v.id, { captionEn: v.captionEn, captionZh: v.captionZh, staffId: v.staffId || null, serviceId: v.serviceId || null })
+    const tags: Tags = {}
+    if (v.tags.length) tags.length = v.tags.length
+    if (v.tags.style?.length) tags.style = v.tags.style
+    if (v.tags.colorId) tags.colorId = v.tags.colorId
+    const r = await updateGalleryAction(shopId, v.id, { captionEn: v.captionEn, captionZh: v.captionZh, staffId: v.staffId || null, serviceId: v.serviceId || null, tags })
     if (r.ok) { setSaved(v); onSaved() }
   })
   return (
@@ -98,6 +103,25 @@ function GalleryCard({ shopId, item, staff, services, first, last, onMove, onSav
             <option value="">{t('ga.what')}</option>
             {services.map(s => <option key={s.id} value={s.id}>{pick(lang, s.name, s.nameZh)}</option>)}
           </select>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <select aria-label={t('tag.length')} className="inp inp-sm" value={v.tags.length ?? ''} onChange={e => setV({ ...v, tags: { ...v.tags, length: (e.target.value || undefined) as Tags['length'] } })}>
+            <option value="">{t('tag.length')}</option>
+            {(['short', 'medium', 'long'] as const).map(l => <option key={l} value={l}>{t(`tag.len.${l}`)}</option>)}
+          </select>
+          {colors.length > 0 && (
+            <select aria-label={t('tag.color')} className="inp inp-sm" value={v.tags.colorId ?? ''} onChange={e => setV({ ...v, tags: { ...v.tags, colorId: e.target.value || undefined } })}>
+              <option value="">{t('tag.color')}</option>
+              {colors.map(c => <option key={c.id} value={c.id}>{pick(lang, c.name, c.nameZh)}</option>)}
+            </select>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('tag.style')}>
+          {styleTags.map(tag => {
+            const on = v.tags.style?.includes(tag) ?? false
+            return <button key={tag} type="button" aria-pressed={on} onClick={() => setV({ ...v, tags: { ...v.tags, style: on ? (v.tags.style ?? []).filter(x => x !== tag) : [...(v.tags.style ?? []), tag].slice(0, 6) } })}
+              className={`chip ${on ? 'chip-accent' : ''}`}>{t(`tag.${tag}` as never)}</button>
+          })}
         </div>
         <div className="flex items-center gap-1">
           <button className="btn btn-sm btn-ghost !px-2" aria-label={t('ga.left')} disabled={first || pending} onClick={() => onMove(-1)}>←</button>

@@ -8,7 +8,9 @@ import { StoreHeader, PreviewBanner, Initial } from '@/components/store'
 import { money } from '@/components/ui'
 import { env } from '@/lib/env'
 import { themeOf } from '@/lib/themes'
-import { listGallery } from '@/lib/data/rules'
+import { listGallery, listPalette } from '@/lib/data/rules'
+import { StoreDesigner } from '@/components/StoreDesigner'
+import { HairPalette } from '@/components/HairPalette'
 import { looksFrom } from '@/lib/looks'
 import { StoreGallery } from '@/components/StoreGallery'
 import { Track } from '@/components/Track'
@@ -34,7 +36,9 @@ export default async function Storefront(props: { params: Promise<{ slug: string
   }
 
   const theme = themeOf(shop.theme)
-  const [{ services, staff, skills }, gallery] = await Promise.all([loadCatalog(shop.id, { forCustomers: true }), listGallery(shop.id)])
+  const [{ services, staff, skills }, gallery, palette] = await Promise.all([loadCatalog(shop.id, { forCustomers: true }), listGallery(shop.id), listPalette(shop.id, undefined, true)])
+  const nailColors = palette.filter(c => c.kind === 'nail')
+  const hairColors = palette.filter(c => c.kind === 'hair')
   const looks = looksFrom(gallery, staff, services, lang)
   const withWork = new Set(looks.map(l => l.staffId).filter(Boolean))
   const now = nowInZone(shop.timezone)
@@ -135,6 +139,28 @@ export default async function Storefront(props: { params: Promise<{ slug: string
             <h2 id="work-h" className="s-display text-[26px]">{t('gl.title')}</h2>
             <StoreGallery slug={shop.slug} looks={looks.slice(0, 6)} />
             {looks.length > 6 && <Link href={`/${shop.slug}/gallery`} className="s-btn s-btn-ghost self-start">{t('gl.all', looks.length)}</Link>}
+          </section>
+        )}
+
+        {hairColors.length > 0 && (
+          <section aria-labelledby="hair-h" className="flex flex-col gap-4">
+            <div>
+              <h2 id="hair-h" className="s-display text-[26px]">{t('hc.title')}</h2>
+              <p className="text-[14px] s-muted">{t('hc.sub')}</p>
+            </div>
+            <HairPalette slug={shop.slug} serviceId={main.find(s => s.category === 'hair' && /colou?r|染|dye|balayage|highlight/i.test(s.name + (s.nameZh ?? '')))?.id ?? null}
+              swatches={hairColors.map(c => ({ id: c.id, label: pick(lang, c.name, c.nameZh), code: c.code, hex: c.hex, hex2: c.hex2, photoUrl: c.photoUrl }))} />
+          </section>
+        )}
+
+        {shop.industry !== 'barber' && (
+          <section aria-labelledby="design-h" className="flex flex-col gap-4">
+            <div>
+              <h2 id="design-h" className="s-display text-[26px]">{t('nd.title')}</h2>
+              <p className="text-[14px] s-muted">{t('nd.sub')}</p>
+            </div>
+            <StoreDesigner slug={shop.slug} swatches={nailColors.map(c => ({ hex: c.hex, name: c.name, nameZh: c.nameZh, code: c.code }))}
+              serviceId={main.find(s => s.category === 'hand')?.id ?? null} />
           </section>
         )}
 

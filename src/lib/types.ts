@@ -70,6 +70,35 @@ export type Staff = {
   commissionPct: number
   sort: number
   defaultWeek: Record<string, { start: number; end: number; breaks: Break[] }>
+  publicPage: boolean
+  specialties: string[]
+  specialtiesZh: string[]
+}
+
+/** A shop-managed colour swatch: hair dye shades or nail polish colours. */
+export type Swatch = {
+  id: string; shopId: string; kind: 'hair' | 'nail'; name: string; nameZh: string | null; code: string | null
+  hex: string; hex2: string | null; photoUrl: string | null; sort: number; active: boolean
+}
+
+/** Filters on a gallery photo. */
+export type GalleryTags = { length?: 'short' | 'medium' | 'long'; style?: string[]; colorId?: string }
+
+/** What a client designed in "design your nails"; rendered by NailArt. */
+export type NailDesign = {
+  shape: 'round' | 'square' | 'squoval' | 'almond' | 'coffin' | 'stiletto'
+  length: 'short' | 'medium' | 'long'
+  color: string          // hex
+  color2?: string | null // accent / french tip / ombre end
+  finish: 'glossy' | 'matte' | 'chrome' | 'glitter'
+  art: 'plain' | 'french' | 'ombre' | 'dots' | 'line' | 'accent' | 'marble'
+  colorName?: string | null
+}
+
+/** Structured client preferences kept by the shop. */
+export type Preferences = {
+  colors?: string[]; shape?: NailDesign['shape']; length?: NailDesign['length']; finish?: NailDesign['finish']
+  hairColor?: string; hairStyle?: string; staffId?: string | null; notes?: string
 }
 
 export type Service = {
@@ -97,7 +126,7 @@ export type Resource = { id: string; shopId: string; name: string; nameZh: strin
 
 export type GalleryItem = {
   id: string; shopId: string; url: string; captionEn: string | null; captionZh: string | null
-  staffId: string | null; serviceId: string | null; sort: number; createdAt: Date
+  staffId: string | null; serviceId: string | null; sort: number; createdAt: Date; tags: GalleryTags
 }
 
 /** What the shop measured before going online, to compare against later. */
@@ -159,5 +188,9 @@ export type Booking = {
   actualEnd: Date | null
   clientConfirmedAt: Date | null
   reminderSentAt: Date | null
+  design: NailDesign | null
+  rating: number | null
+  ratingNote: string | null
+  ratedAt: Date | null
   items?: BookingItem[]
 }

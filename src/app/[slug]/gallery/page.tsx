@@ -1,22 +1,21 @@
 import Link from 'next/link'
 import { loadStorefront } from '@/lib/storefront'
 import { loadCatalog } from '@/lib/data/catalog'
-import { listGallery } from '@/lib/data/rules'
+import { listGallery, listPalette } from '@/lib/data/rules'
+import { GalleryBrowser } from '@/components/GalleryBrowser'
 import { looksFrom } from '@/lib/looks'
 import { makeT, pick } from '@/lib/i18n'
 import { StoreHeader, PreviewBanner } from '@/components/store'
-import { StoreGallery } from '@/components/StoreGallery'
 
 export default async function GalleryPage(props: { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { slug } = await props.params
   const sp = await props.searchParams
   const { shop, preview, open, lang } = await loadStorefront(slug)
   const t = makeT(lang)
-  const [catalog, gallery] = await Promise.all([loadCatalog(shop.id, { forCustomers: true }), open ? listGallery(shop.id) : Promise.resolve([])])
+  const [catalog, gallery, palette] = await Promise.all([loadCatalog(shop.id, { forCustomers: true }), open ? listGallery(shop.id) : Promise.resolve([]), open ? listPalette(shop.id, undefined, true) : Promise.resolve([])])
   const all = looksFrom(gallery, catalog.staff, catalog.services, lang)
   const people = catalog.staff.filter(s => all.some(l => l.staffId === s.id))
   const who = people.find(p => p.id === sp.staff)?.id ?? null
-  const looks = who ? all.filter(l => l.staffId === who) : all
   return (
     <div className="min-h-screen pb-16">
       {preview && shop.status !== 'live' && <PreviewBanner text={t('sf2.previewBanner')} />}
@@ -26,15 +25,11 @@ export default async function GalleryPage(props: { params: Promise<{ slug: strin
           <h1 className="s-display text-[34px] leading-tight">{t('gl.title')}</h1>
           <Link href={`/${shop.slug}/book`} className="s-btn">{t('sf2.bookNow')}</Link>
         </div>
-        {people.length > 1 && (
-          <nav className="flex flex-wrap gap-2" aria-label={t('gl.title')}>
-            <Link href={`/${shop.slug}/gallery`} className="s-chip no-underline" aria-current={!who ? 'page' : undefined} style={!who ? { background: 'var(--s-ink)', color: 'var(--s-bg)' } : undefined}>{t('gl.everyone')}</Link>
-            {people.map(p => (
-              <Link key={p.id} href={`/${shop.slug}/gallery?staff=${p.id}`} className="s-chip no-underline" aria-current={who === p.id ? 'page' : undefined} style={who === p.id ? { background: 'var(--s-ink)', color: 'var(--s-bg)' } : undefined}>{pick(lang, p.name, p.nameZh)}</Link>
-            ))}
-          </nav>
-        )}
-        {looks.length ? <StoreGallery slug={shop.slug} looks={looks} columns={4} /> : <p className="s-muted">{t('gl.empty')}</p>}
+        {all.length ? (
+          <GalleryBrowser slug={shop.slug} looks={all} initialStaff={who}
+            people={people.map(p => ({ id: p.id, label: pick(lang, p.name, p.nameZh) }))}
+            colors={palette.map(c => ({ id: c.id, label: pick(lang, c.name, c.nameZh) + (c.code ? ` ${c.code}` : ''), hex: c.hex2 ? `linear-gradient(135deg, ${c.hex}, ${c.hex2})` : c.hex }))} />
+        ) : <p className="s-muted">{t('gl.empty')}</p>}
       </main>
     </div>
   )

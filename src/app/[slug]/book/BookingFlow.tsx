@@ -7,12 +7,15 @@ import { addDays, diffDays, fmtDate, fmtTime, fmtDuration, weekday } from '@/lib
 import type { Industry, Skill } from '@/lib/types'
 import { downscale } from '@/components/downscale'
 import { track, visitId } from '@/components/track'
+import type { NailDesign } from '@/lib/types'
+import { NailArt, describeDesign } from '@/components/NailArt'
+import { NailDesigner, designToPng, type SwatchOption } from '@/components/NailDesigner'
 
 export type FlowShop = {
   slug: string; industry: Industry; maxGuests: number; allowAnyStaff: boolean; maxDays: number; leadMinutes: number
   cutoffMinutes: number; showPrices: boolean; live: boolean; note: string | null; phone: string | null; waitlist: boolean
 }
-export type FlowInitial = { services: string[]; addons: string[]; staff: string | null; date: string | null; look: { id: string; url: string } | null }
+export type FlowInitial = { services: string[]; addons: string[]; staff: string | null; date: string | null; look: { id: string; url: string } | null; design: NailDesign | null; hairColor: { id: string; label: string; hex: string } | null }
 type Svc = { id: string; kind: 'service' | 'addon'; category: string; appliesTo: string[]; name: string; nameZh: string | null; descEn: string | null; descZh: string | null; durationMin: number; priceCents: number | null; priceFrom: boolean; questionEn: string | null; questionZh: string | null }
 type Person = { id: string; name: string; nameZh: string | null; bioEn: string | null; bioZh: string | null; color: string; photoUrl: string | null }
 type Guest = { serviceIds: string[]; addonIds: string[]; staffId: string | null; answers?: Record<string, boolean> }
@@ -24,8 +27,8 @@ const WINDOW = 14
 
 const hasQuestion = (s: Svc) => !!(s.questionEn || s.questionZh)
 
-export function BookingFlow({ shop, today, services, staff, skills, initial, emailOn = false }: {
-  shop: FlowShop; today: string; services: Svc[]; staff: Person[]; skills: Skill[]; initial: FlowInitial; emailOn?: boolean
+export function BookingFlow({ shop, today, services, staff, skills, initial, emailOn = false, swatches = [] }: {
+  shop: FlowShop; today: string; services: Svc[]; staff: Person[]; skills: Skill[]; initial: FlowInitial; emailOn?: boolean; swatches?: SwatchOption[]
 }) {
   const { t, lang } = useI18n()
   const router = useRouter()
@@ -62,6 +65,11 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
   const [notice, setNotice] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', phone: '', email: '', notes: '', agree: false, website: '' })
   const [photo, setPhoto] = useState<string | null>(initial.look?.url ?? null)
+  const [design, setDesign] = useState<NailDesign | null>(initial.design)
+  const [hairColor, setHairColor] = useState(initial.hairColor)
+  const [draft, setDraft] = useState<NailDesign | null>(null)   // while the designer dialog is open
+  const designRef = useRef<HTMLDivElement>(null)
+  const canDesign = shop.industry !== 'barber'
   const [uploading, setUploading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -197,12 +205,27 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
     if (!slot || !date) return goStep(2)
     setSubmitting(true)
     try {
+      let photoUrl = lookId ? null : photo
+      if (design && !photoUrl) {
+        // turn the design into a picture so the technician sees it like any reference photo
+        const svg = designRef.current?.querySelector('svg')
+        if (svg) {
+          try {
+            const png = await designToPng(svg)
+            const fd = new FormData(); fd.append('file', png, 'design.png')
+            const up = await fetch(`/api/public/${shop.slug}/upload`, { method: 'POST', body: fd })
+            const upData = await up.json().catch(() => ({}))
+            if (up.ok && upData.url) photoUrl = upData.url
+          } catch { /* the design still travels as data */ }
+        }
+      }
       const res = await fetch(`/api/public/${shop.slug}/bookings`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           guests: guests.map(({ serviceIds, addonIds, staffId }) => ({ serviceIds, addonIds, staffId })), date, start: slot.start,
-          name: form.name.trim(), phone: form.phone.trim(), email: form.email.trim(), notes: form.notes,
-          photoUrl: lookId ? null : photo, lookId, lang, website: form.website, session: visitId(),
+          name: form.name.trim(), phone: form.phone.trim(), email: form.email.trim(),
+          notes: [form.notes.trim(), design ? `${t('nd.yourDesign')}: ${describeDesign(design, t as (k: string) => string)}` : '', hairColor ? `${t('hc.chosen')}: ${hairColor.label}` : ''].filter(Boolean).join('\n'),
+          photoUrl, lookId: photoUrl ? null : lookId, lang, website: form.website, session: visitId(), design,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -255,6 +278,19 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
           )}
         </div>
       ))}
+      {hairColor && (
+        <div className="flex items-center gap-3 border-t pt-2 text-[13px] s-line">
+          <span className="h-9 w-9 flex-none rounded-full border border-black/10" style={{ background: hairColor.hex }} />
+          <span className="min-w-0 flex-1"><b className="block">{t('hc.chosen')}</b><span className="s-muted">{hairColor.label}</span></span>
+          <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setHairColor(null)}>×</button>
+        </div>
+      )}
+      {design && (
+        <div className="flex items-center gap-3 border-t pt-2 text-[13px] s-line">
+          <NailArt design={design} size={84} uid="sum" />
+          <span className="min-w-0"><b className="block">{t('nd.yourDesign')}</b><span className="s-muted">{describeDesign(design, t as (k: string) => string)}</span></span>
+        </div>
+      )}
       {date && slot && (
         <div className="flex justify-between gap-3 border-t pt-2 text-[14px] s-line">
           <span className="s-muted">{t('bf.when')}</span>
@@ -475,6 +511,41 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                   <textarea id="bf-notes" className="s-inp" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder={t('bf.notesPh')} maxLength={1000} />
                 </div>
               </div>
+              {hairColor && (
+                <div className="s-card flex items-center gap-3 p-3">
+                  <span className="h-10 w-10 flex-none rounded-full border border-black/10" style={{ background: hairColor.hex }} />
+                  <span className="min-w-0 flex-1"><b className="block text-[14px]">{t('hc.chosen')}</b><span className="text-[13px] s-muted">{hairColor.label}</span></span>
+                  <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setHairColor(null)}>{t('bf.photoRemove')}</button>
+                </div>
+              )}
+              {canDesign && (
+                <div className="s-card flex flex-col gap-3 p-4" ref={designRef}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <b>{t('nd.title')}</b>
+                    {design && <span className="text-[12.5px] s-muted">{t('nd.attached')}</span>}
+                  </div>
+                  {design ? (
+                    <div className="flex flex-wrap items-center gap-4">
+                      <NailArt design={design} size={150} uid="bf" />
+                      <div className="flex min-w-0 flex-col gap-2">
+                        <span className="text-[13.5px]">{describeDesign(design, t as (k: string) => string)}</span>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setDraft(design)}>{t('nd.change')}</button>
+                          <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setDesign(null)}>{t('nd.remove')}</button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <p className="min-w-0 flex-1 text-[13.5px] s-muted">{t('nd.sub')}</p>
+                      <button type="button" className="s-btn s-btn-sm" onClick={() => setDraft({ shape: 'almond', length: 'medium', color: swatches[0]?.hex ?? '#E8B4B8', color2: '#F7F3EE', finish: 'glossy', art: 'plain', colorName: swatches[0] ? swatches[0].name : null })}>{t('nd.openInBooking')}</button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {draft && (
+                <DesignDialog value={draft} swatches={swatches} onCancel={() => setDraft(null)} onDone={d => { setDesign(d); setDraft(null) }} />
+              )}
               <div>
                 <span className="s-lbl">{t('bf.photo')} ({t('c.optional')})</span>
                 {photo ? (
@@ -601,5 +672,28 @@ function Waitlist({ slug, date, guest, contact, onContact, prominent }: {
         <button type="button" className="s-btn s-btn-ghost" onClick={() => setOpen(false)}>{t('c.cancel')}</button>
       </div>
     </div>
+  )
+}
+
+
+function DesignDialog({ value, swatches, onCancel, onDone }: { value: NailDesign; swatches: SwatchOption[]; onCancel: () => void; onDone: (d: NailDesign) => void }) {
+  const { t } = useI18n()
+  const [d, setD] = useState<NailDesign>(value)
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => { const el = ref.current; if (el && !el.open) el.showModal() }, [])
+  return (
+    <dialog ref={ref} onClose={onCancel} className="m-auto max-h-[94vh] w-[min(96vw,900px)] overflow-y-auto p-0 backdrop:bg-black/60" style={{ background: 'var(--s-bg)', color: 'var(--s-ink)', borderRadius: 'var(--s-rs)' }}>
+      <div className="flex flex-col gap-4 p-4 sm:p-6">
+        <div className="flex items-start justify-between gap-3">
+          <div><h2 className="s-display text-[26px]">{t('nd.title')}</h2><p className="text-[13.5px] s-muted">{t('nd.sub')}</p></div>
+          <button type="button" aria-label={t('c.close')} onClick={onCancel} className="grid h-9 w-9 flex-none place-items-center rounded-full text-[18px]" style={{ background: 'var(--s-sunk)' }}>×</button>
+        </div>
+        <NailDesigner value={d} onChange={setD} swatches={swatches} />
+        <div className="sticky bottom-0 -mx-4 -mb-4 flex gap-2 border-t p-4 s-line sm:-mx-6 sm:-mb-6 sm:p-6" style={{ background: 'var(--s-bg)' }}>
+          <button type="button" className="s-btn" onClick={() => onDone(d)}>{t('nd.useInBooking')}</button>
+          <button type="button" className="s-btn s-btn-ghost" onClick={onCancel}>{t('c.cancel')}</button>
+        </div>
+      </div>
+    </dialog>
   )
 }

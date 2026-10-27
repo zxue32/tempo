@@ -7,6 +7,8 @@ import { StoreHeader, PreviewBanner } from '@/components/store'
 import { BookingFlow, type FlowShop, type FlowInitial } from './BookingFlow'
 import { sql } from '@/lib/db'
 import { isDateString } from '@/lib/tz'
+import { isNailDesign } from '@/components/NailArt'
+import { listPalette } from '@/lib/data/rules'
 
 export const metadata = { robots: { index: false } }
 
@@ -34,10 +36,16 @@ export default async function BookPage(props: { params: Promise<{ slug: string }
   const ids = (v: string | string[] | undefined) => one(v).split(',').filter(x => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 8)
   const lookId = ids(sp.look)[0]
   const [look] = lookId ? await sql<{ id: string; url: string }[]>`select id, url from app.gallery where id = ${lookId} and shop_id = ${shop.id}` : []
+  const colorId = ids(sp.color)[0]
+  const [hair] = colorId ? await sql<{ id: string; name: string; nameZh: string | null; code: string | null; hex: string }[]>`select id, name, name_zh, code, hex from app.palette where id = ${colorId} and shop_id = ${shop.id} and kind = 'hair'` : []
+  let design = null
+  try { const raw = one(sp.design); if (raw) { const j = JSON.parse(Buffer.from(raw.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')); if (isNailDesign(j)) design = j } } catch { /* ignore a bad link */ }
   const initial: FlowInitial = {
     services: ids(sp.service), addons: ids(sp.addons), staff: ids(sp.staff)[0] ?? null,
-    date: isDateString(one(sp.date)) ? one(sp.date) : null, look: look ?? null,
+    date: isDateString(one(sp.date)) ? one(sp.date) : null, look: look ?? null, design,
+    hairColor: hair ? { id: hair.id, label: pick(lang, hair.name, hair.nameZh) + (hair.code ? ` ${hair.code}` : ''), hex: hair.hex } : null,
   }
+  const nailColors = shop.industry === 'barber' ? [] : await listPalette(shop.id, 'nail', true)
   return (
     <div className="min-h-screen">
       {preview && shop.status !== 'live' && <PreviewBanner text={t('sf2.previewBanner')} />}
@@ -50,6 +58,7 @@ export default async function BookPage(props: { params: Promise<{ slug: string }
         staff={staff.map(s => ({ id: s.id, name: s.name, nameZh: s.nameZh, bioEn: s.bioEn, bioZh: s.bioZh, color: s.color, photoUrl: s.photoUrl }))}
         skills={catalog.skills.filter(k => staff.some(s => s.id === k.staffId))}
         initial={initial}
+        swatches={nailColors.map(c => ({ hex: c.hex, name: c.name, nameZh: c.nameZh, code: c.code }))}
       />
     </div>
   )

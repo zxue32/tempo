@@ -1,4 +1,5 @@
 'use client'
+import { NailArt, describeDesign } from '@/components/NailArt'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { useI18n } from '@/components/i18n'
@@ -368,6 +369,12 @@ function DetailPanel({ shop, id, staff, services, range, onClose, onDone }: {
         </>}
         {b.cancelReason && <><dt className="text-muted">{t('bs.cancelled')}</dt><dd>{b.cancelReason}</dd></>}
       </dl>
+      {b.design && (
+        <div>
+          <span className="lbl">{t('nd.forStaff')}</span>
+          <div className="flex flex-wrap items-center gap-3"><NailArt design={b.design} size={160} uid="cd" /><span className="text-[13px] text-muted">{describeDesign(b.design, t as (k: string) => string)}</span></div>
+        </div>
+      )}
       {b.photoUrl && (
         <a href={b.photoUrl} target="_blank" rel="noreferrer" className="block">
           <span className="lbl">{t('cal.refPhoto')}</span>
