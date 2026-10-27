@@ -8,7 +8,7 @@ import type { Industry, Skill } from '@/lib/types'
 import { downscale } from '@/components/downscale'
 import { track, visitId } from '@/components/track'
 import type { NailDesign } from '@/lib/types'
-import { NailArt, describeDesign } from '@/components/NailArt'
+import { NailArt, describeDesign, isNailDesign } from '@/components/NailArt'
 import { NailDesigner, designToPng, type SwatchOption } from '@/components/NailDesigner'
 
 export type FlowShop = {
@@ -68,6 +68,8 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
   const [design, setDesign] = useState<NailDesign | null>(initial.design)
   const [hairColor, setHairColor] = useState(initial.hairColor)
   const [draft, setDraft] = useState<NailDesign | null>(null)   // while the designer dialog is open
+  // what this phone booked with last time (kept only on the device), offered as a one-tap repeat
+  const [last, setLast] = useState<{ design: NailDesign | null; hairColor: { id: string; label: string; hex: string } | null }>({ design: null, hairColor: null })
   const designRef = useRef<HTMLDivElement>(null)
   const canDesign = shop.industry !== 'barber'
   const [uploading, setUploading] = useState(false)
@@ -79,8 +81,16 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
     try {
       const saved = JSON.parse(localStorage.getItem('tempo.contact') || 'null')
       if (saved && typeof saved === 'object') setForm(f => ({ ...f, name: saved.name || '', phone: saved.phone || '', email: saved.email || '' }))
+      const prev = JSON.parse(localStorage.getItem('tempo.last') || 'null')
+      if (prev && typeof prev === 'object' && prev.shop === shop.slug) {
+        const hc = prev.hairColor
+        setLast({
+          design: isNailDesign(prev.design) ? prev.design : null,
+          hairColor: hc && typeof hc === 'object' && typeof hc.id === 'string' && typeof hc.label === 'string' && /^#[0-9a-fA-F]{6}$/.test(String(hc.hex)) ? { id: hc.id, label: String(hc.label).slice(0, 80), hex: hc.hex } : null,
+        })
+      }
     } catch { /* storage unavailable */ }
-  }, [])
+  }, [shop.slug])
 
   const guest = guests[g]
   const mainOf = (gs: Guest) => gs.serviceIds.map(id => byId.get(id)!).filter(Boolean)
@@ -230,7 +240,10 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
       })
       const data = await res.json().catch(() => ({}))
       if (res.ok && data.token) {
-        try { localStorage.setItem('tempo.contact', JSON.stringify({ name: form.name.trim(), phone: form.phone.trim(), email: form.email.trim() })) } catch { /* ignore */ }
+        try {
+          localStorage.setItem('tempo.contact', JSON.stringify({ name: form.name.trim(), phone: form.phone.trim(), email: form.email.trim() }))
+          if (design || hairColor) localStorage.setItem('tempo.last', JSON.stringify({ shop: shop.slug, design, hairColor }))
+        } catch { /* ignore */ }
         router.push(`/b/${data.token}?new=1`)
         return
       }
@@ -518,6 +531,13 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                   <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setHairColor(null)}>{t('bf.photoRemove')}</button>
                 </div>
               )}
+              {!hairColor && last.hairColor && shop.industry !== 'nail' && (
+                <div className="s-card flex items-center gap-3 p-3">
+                  <span className="h-10 w-10 flex-none rounded-full border border-black/10" style={{ background: last.hairColor.hex }} />
+                  <span className="min-w-0 flex-1"><b className="block text-[14px]">{t('pc.lastHair')}</b><span className="text-[13px] s-muted">{last.hairColor.label}</span></span>
+                  <button type="button" className="s-btn s-btn-sm" onClick={() => setHairColor(last.hairColor)}>{t('pc.useLast')}</button>
+                </div>
+              )}
               {canDesign && (
                 <div className="s-card flex flex-col gap-3 p-4" ref={designRef}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -532,6 +552,18 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                         <div className="flex flex-wrap gap-2">
                           <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setDraft(design)}>{t('nd.change')}</button>
                           <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setDesign(null)}>{t('nd.remove')}</button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : last.design ? (
+                    <div className="flex flex-wrap items-center gap-4">
+                      <NailArt design={last.design} size={120} uid="bfl" />
+                      <div className="flex min-w-0 flex-1 flex-col gap-2">
+                        <span className="text-[13.5px]"><b>{t('pc.lastDesign')}</b> · {describeDesign(last.design, t as (k: string) => string)}</span>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" className="s-btn s-btn-sm" onClick={() => setDesign(last.design)}>{t('pc.useLast')}</button>
+                          <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setDraft({ ...last.design! })}>{t('nd.change')}</button>
+                          <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setDraft({ shape: 'almond', length: 'medium', color: swatches[0]?.hex ?? '#E8B4B8', color2: '#F7F3EE', finish: 'glossy', art: 'plain', colorName: swatches[0] ? swatches[0].name : null })}>{t('pc.newDesign')}</button>
                         </div>
                       </div>
                     </div>

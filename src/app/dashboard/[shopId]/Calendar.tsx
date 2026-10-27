@@ -1,5 +1,8 @@
 'use client'
+import Link from 'next/link'
 import { NailArt, describeDesign } from '@/components/NailArt'
+import { PrefChips } from '@/components/PrefChips'
+import { hasPrefs } from '@/lib/prefs'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { useI18n } from '@/components/i18n'
@@ -8,7 +11,7 @@ import { BookingStatusChip, money } from '@/components/ui'
 import { blocker, guestDuration, type EngineDay, type EngineStaff } from '@/lib/engine'
 import { addDays, fmtDate, fmtTime, fmtTimeShort, fmtDuration } from '@/lib/tz'
 import { pick, type DictKey } from '@/lib/i18n'
-import type { Booking, Service, Shift, Skill, Staff, Industry, BookingStatus } from '@/lib/types'
+import type { Booking, Service, Shift, Skill, Staff, Industry, BookingStatus, Preferences } from '@/lib/types'
 import {
   createBookingAction, bookingDetail, setBookingStatusAction, moveBookingAction, setItemsAction, markStartedAction,
   updateBookingDetailsAction, findCustomerByPhone,
@@ -315,7 +318,7 @@ function AddPanel({ shop, date, day, range, staff, services, skills, initialStaf
   const [notes, setNotes] = useState('')
   const [blockMin, setBlockMin] = useState(30)
   const [force, setForce] = useState(false)
-  const [known, setKnown] = useState<{ name: string; visits: number } | null>(null)
+  const [known, setKnown] = useState<{ name: string; visits: number; prefs: Preferences | null } | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [pending, startT] = useTransition()
 
@@ -390,8 +393,13 @@ function AddPanel({ shop, date, day, range, staff, services, skills, initialStaf
               <input id="qa-phone" type="tel" className="inp" value={phone} onChange={e => setPhone(e.target.value)}
                 onBlur={async () => {
                   const c = phone.replace(/\D/g, '').length >= 7 ? await findCustomerByPhone(shop.id, phone) : null
-                  setKnown(c ? { name: c.name, visits: c.visits } : null)
-                  if (c) { if (!name) setName(c.name); if (!email && c.email) setEmail(c.email) }
+                  setKnown(c ? { name: c.name, visits: c.visits, prefs: c.preferences } : null)
+                  if (c) {
+                    if (!name) setName(c.name); if (!email && c.email) setEmail(c.email)
+                    // their usual technician, when she works that day
+                    const usual = c.preferences?.staffId
+                    if (usual && day.staff.some(s => s.id === usual)) setStaffId(usual)
+                  }
                 }} />
             </div>
             <div>
@@ -408,6 +416,12 @@ function AddPanel({ shop, date, day, range, staff, services, skills, initialStaf
             </div>
           </div>
           {known && <p className="chip chip-accent self-start">{t('cal.existing', known.name, known.visits)}</p>}
+          {known && hasPrefs(known.prefs) && (
+            <div data-pref className="rounded-xl border border-accent/40 bg-accent-soft/40 p-3">
+              <span className="lbl">♡ {t('pc.title')}</span>
+              <PrefChips prefs={known.prefs} staff={staff} t={t as (k: string, ...a: Array<string | number>) => string} lang={lang} size="sm" />
+            </div>
+          )}
         </>
       )}
       <div className="card flex flex-col gap-1 px-4 py-3 text-[14px]">
@@ -484,6 +498,18 @@ function DetailPanel({ shop, id, staff, services, range, onClose, onDone }: {
         </>}
         {b.cancelReason && <><dt className="text-muted">{t('bs.cancelled')}</dt><dd>{b.cancelReason}</dd></>}
       </dl>
+      {b.customerId && hasPrefs(d.prefs) && (
+        <div data-pref className="rounded-xl border border-accent/40 bg-accent-soft/40 p-3">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="lbl !mb-0">♡ {t('pc.title')}</span>
+            <Link href={`/dashboard/${shop.id}/customers/${b.customerId}`} className="text-[12.5px] font-semibold text-accent">{t('c.edit')} →</Link>
+          </div>
+          <PrefChips prefs={d.prefs} staff={staff} t={t as (k: string, ...a: Array<string | number>) => string} lang={lang} size="sm" />
+        </div>
+      )}
+      {b.customerId && !hasPrefs(d.prefs) && !isBlock && (
+        <Link href={`/dashboard/${shop.id}/customers/${b.customerId}`} className="self-start text-[12.5px] text-muted">♡ {t('pc.addLink')} →</Link>
+      )}
       {b.design && (
         <div>
           <span className="lbl">{t('nd.forStaff')}</span>

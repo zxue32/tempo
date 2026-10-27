@@ -97,7 +97,7 @@ export type NailDesign = {
 
 /** Structured client preferences kept by the shop. */
 export type Preferences = {
-  colors?: string[]; shape?: NailDesign['shape']; length?: NailDesign['length']; finish?: NailDesign['finish']
+  colors?: string[]; shape?: NailDesign['shape']; length?: NailDesign['length']; finish?: NailDesign['finish']; styles?: string[]
   hairColor?: string; hairStyle?: string; staffId?: string | null; notes?: string
 }
 

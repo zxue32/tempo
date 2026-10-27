@@ -3,12 +3,14 @@ import { notFound } from 'next/navigation'
 import { requireShop } from '@/lib/auth'
 import { getShop } from '@/lib/data/shops'
 import { listStaff } from '@/lib/data/catalog'
+import { listPalette } from '@/lib/data/rules'
 import { getCustomer } from '@/lib/data/insights'
 import { getT } from '@/lib/i18n/server'
 import { pick } from '@/lib/i18n'
 import { fmtDate, fmtTime, nowInZone } from '@/lib/tz'
 import { BookingStatusChip, money } from '@/components/ui'
 import { CustomerForm } from './CustomerForm'
+import { PrefCard } from './PrefCard'
 
 export default async function CustomerPage(props: PageProps<'/dashboard/[shopId]/customers/[customerId]'>) {
   const { shopId, customerId } = await props.params
@@ -18,8 +20,12 @@ export default async function CustomerPage(props: PageProps<'/dashboard/[shopId]
   const today = nowInZone(shop.timezone).date
   const data = await getCustomer(shopId, customerId, today)
   if (!data) notFound()
-  const { customer: c, history } = data
-  const staff = new Map((await listStaff(shopId)).map(s => [s.id, s]))
+  const { customer: c, history, recentDesigns } = data
+  const staffList = await listStaff(shopId)
+  const staff = new Map(staffList.map(s => [s.id, s]))
+  const palette = await listPalette(shopId, undefined, true)
+  const nailColors = palette.filter(p => p.kind === 'nail').map(p => ({ hex: p.hex, name: p.name, nameZh: p.nameZh }))
+  const hairColors = palette.filter(p => p.kind === 'hair').map(p => ({ id: p.id, label: [p.code, p.name].filter(Boolean).join(' · '), display: [p.code, pick(lang, p.name, p.nameZh)].filter(Boolean).join(' · '), hex: p.hex, hex2: p.hex2 }))
   const kpis: Array<[string, string | number, string?]> = [
     [t('cu.visits'), c.visits],
     [t('cu.noShows'), c.noShows, c.noShows ? 'text-warn' : undefined],
@@ -41,10 +47,13 @@ export default async function CustomerPage(props: PageProps<'/dashboard/[shopId]
         ))}
       </dl>
       <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_1fr]">
-        <section className="card flex flex-col gap-3 p-5">
-          <h2 className="text-[17px] font-bold">{t('cu.details')}</h2>
-          <CustomerForm shopId={shopId} customer={{ id: c.id, name: c.name, phone: c.phone ?? '', email: c.email ?? '', notes: c.notes ?? '', blocked: c.blocked }} />
-        </section>
+        <div className="flex flex-col gap-5">
+          <section className="card flex flex-col gap-3 p-5">
+            <h2 className="text-[17px] font-bold">{t('cu.details')}</h2>
+            <CustomerForm shopId={shopId} customer={{ id: c.id, name: c.name, phone: c.phone ?? '', email: c.email ?? '', notes: c.notes ?? '', blocked: c.blocked }} />
+          </section>
+          <PrefCard shopId={shopId} customerId={c.id} initial={c.preferences ?? {}} staff={staffList} nailColors={nailColors} hairColors={hairColors} industry={shop.industry} recentDesigns={recentDesigns} />
+        </div>
         <section className="flex flex-col gap-3">
           <h2 className="text-[17px] font-bold">{t('cu.history')}</h2>
           {history.length === 0 ? <div className="card p-6 text-muted">{t('bl.empty')}</div> : (

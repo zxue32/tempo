@@ -12,6 +12,8 @@ import { BookingStatusChip } from '@/components/ui'
 import { Initial } from '@/components/store'
 import { MeActions } from './MeActions'
 import { NailArt, describeDesign } from '@/components/NailArt'
+import { PrefChips } from '@/components/PrefChips'
+import { preferencesFor } from '@/lib/data/insights'
 
 export default async function MyDay(props: PageProps<'/dashboard/[shopId]/me'>) {
   const { shopId } = await props.params
@@ -48,6 +50,7 @@ export default async function MyDay(props: PageProps<'/dashboard/[shopId]/me'>) 
     `,
   ])
   const counts = new Map(weekCounts.map(w => [w.date, w.count]))
+  const prefs = await preferencesFor(bookings.map(b => b.customerId))
   const shift = shifts.find(s => s.staffId === me.id && s.date === date)
   const workedDays = new Set(shifts.filter(s => s.staffId === me.id).map(s => s.date))
   const visible = bookings.filter(b => b.status !== 'cancelled')
@@ -162,6 +165,12 @@ export default async function MyDay(props: PageProps<'/dashboard/[shopId]/me'>) 
                 {b.anyStaff && <span className="text-[12.5px] text-muted">{t('cal.anyStaff')}</span>}
                 {b.notes && <p className="whitespace-pre-wrap rounded-lg bg-bg px-3 py-2 text-[14px]">“{b.notes}”</p>}
                 {b.internalNote && <p className="whitespace-pre-wrap text-[13px] text-muted">{t('cal.internalNote')}: {b.internalNote}</p>}
+                {b.customerId && prefs.has(b.customerId) && (
+                  <div data-pref className="rounded-xl border border-accent/40 bg-accent-soft/40 p-3">
+                    <span className="lbl">♡ {t('pc.title')}</span>
+                    <PrefChips prefs={prefs.get(b.customerId)!} staff={allStaff} t={t as (k: string, ...a: Array<string | number>) => string} lang={lang} size="sm" />
+                  </div>
+                )}
                 {b.design && <div className="flex items-center gap-3"><NailArt design={b.design} size={120} uid={'me' + b.id.slice(0, 6)} /><span className="text-[12.5px] text-muted">{describeDesign(b.design, t as (k: string) => string)}</span></div>}
                 {b.photoUrl && (
                   <a href={b.photoUrl} target="_blank" rel="noreferrer" className="self-start">

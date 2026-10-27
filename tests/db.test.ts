@@ -8,7 +8,8 @@ import { availability } from '@/lib/availability'
 import { loadCatalog } from '@/lib/data/catalog'
 import { createBooking, rescheduleByToken, cancelByToken, byToken, BookingError, shopMove, shopSetStatus, shopSetItems, lookupByCode } from '@/lib/bookings'
 import { addDays, nowInZone } from '@/lib/tz'
-import { searchBookings, listCustomers, getCustomer, buildReport } from '@/lib/data/insights'
+import { searchBookings, listCustomers, getCustomer, buildReport, savePreferences, preferencesFor } from '@/lib/data/insights'
+import { cleanPrefs, hasPrefs } from '@/lib/prefs'
 import { measuredDurations, integrityCheck, recordFunnel, funnel } from '@/lib/data/pilot'
 import { joinWaitlist, waitingFor, listWaitlist } from '@/lib/data/waitlist'
 import { notifyWaitlist } from '@/lib/waitlistNotify'
@@ -235,6 +236,23 @@ describe('booking engine against the database', () => {
     expect(r.sources.find(s => s.kind === 'online')!.count).toBeGreaterThan(0)
     expect(r.newReturning.newCount).toBeGreaterThan(0)
     expect(r.popular[0].count).toBeGreaterThan(0)
+  })
+
+  it('keeps a preference card per client and finds it again from their bookings', async () => {
+    const customers = await listCustomers(shop.id, '2026-10-13', '')
+    const spam = customers.find(c => c.name === 'Spam')!
+    expect(hasPrefs(spam.preferences)).toBe(false)
+    expect(await preferencesFor([spam.id])).toEqual(new Map())
+    const card = cleanPrefs({ colors: ['#D9A48F'], shape: 'almond', length: 'short', finish: 'glossy', styles: ['french'], staffId: luna, notes: '  window seat  ', hairColor: '' })
+    expect(card).toEqual({ colors: ['#D9A48F'], shape: 'almond', length: 'short', finish: 'glossy', styles: ['french'], staffId: luna, notes: 'window seat' })
+    expect(await savePreferences(shop.id, spam.id, card)).toBe(true)
+    expect(await savePreferences('00000000-0000-4000-a000-000000000000', spam.id, card)).toBe(false) // another shop cannot write it
+    expect((await getCustomer(shop.id, spam.id, '2026-10-13'))!.customer.preferences).toEqual(card)
+    const history = (await getCustomer(shop.id, spam.id, '2026-10-13'))!.history
+    const byBooking = await preferencesFor(history.map(b => b.customerId))
+    expect(byBooking.get(spam.id)).toEqual(card)
+    await savePreferences(shop.id, spam.id, {})
+    expect(await preferencesFor([spam.id])).toEqual(new Map())
   })
 })
 

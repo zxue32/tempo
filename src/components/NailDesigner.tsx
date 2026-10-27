@@ -98,5 +98,8 @@ export async function designToPng(svgEl: SVGSVGElement, width = 840): Promise<Bl
 }
 
 export function encodeDesign(d: NailDesign): string {
-  return btoa(unescape(encodeURIComponent(JSON.stringify(d)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  const bytes = new TextEncoder().encode(JSON.stringify(d))
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }

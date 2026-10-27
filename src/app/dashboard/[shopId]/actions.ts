@@ -10,6 +10,8 @@ import { saveShifts, upsertSpecialDay, deleteSpecialDay } from '@/lib/data/sched
 import { createBooking, shopMove, shopSetStatus, shopSetItems, shopUpdateDetails, shopMarkStarted, getBooking, bookingEvents, BookingError, normPhone } from '@/lib/bookings'
 import { saveResource, deleteResource, addGalleryItem, updateGalleryItem, deleteGalleryItem, reorderGallery, listPalette, saveSwatch, deleteSwatch, reorderPalette } from '@/lib/data/rules'
 import { integrityCheck } from '@/lib/data/pilot'
+import { savePreferences } from '@/lib/data/insights'
+import { cleanPrefs } from '@/lib/prefs'
 import { markWaitlist } from '@/lib/data/waitlist'
 import { notifyWaitlist } from '@/lib/waitlistNotify'
 import { replayPaperBook, type ReplayResult } from '@/lib/replay'
@@ -19,7 +21,7 @@ import { storeImage, UploadError } from '@/lib/storage'
 import { uuid, dateStr, minuteOfDay, guestsSchema, emailRe } from '@/lib/validate'
 import { isValidTimeZone } from '@/lib/tz'
 import { THEMES } from '@/lib/themes'
-import type { Booking, BookingStatus, Lang } from '@/lib/types'
+import type { Booking, BookingStatus, Lang, Preferences } from '@/lib/types'
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string; detail?: string }
 const fail = (error: string, detail?: string): { ok: false; error: string; detail?: string } => ({ ok: false, error, detail })
@@ -87,7 +89,7 @@ export async function bookingDetail(shopId: string, bookingId: string) {
   const b = await getBooking(shopId, bookingId)
   if (!b) return null
   if (member.role === 'staff' && b.staffId !== member.staffId) return null
-  const [events, group, stats] = await Promise.all([
+  const [events, group, stats, cust] = await Promise.all([
     bookingEvents(b.id),
     b.groupId ? sql<{ id: string; staffId: string }[]>`select id, staff_id from app.bookings where group_id = ${b.groupId}` : Promise.resolve([]),
     b.customerId
@@ -95,8 +97,9 @@ export async function bookingDetail(shopId: string, bookingId: string) {
           select count(*) filter (where status = 'completed')::int as visits, count(*) filter (where status = 'no_show')::int as no_shows
           from app.bookings where customer_id = ${b.customerId}`
       : Promise.resolve([{ visits: 0, noShows: 0 }]),
+    b.customerId ? sql<{ preferences: Preferences | null }[]>`select preferences from app.customers where id = ${b.customerId}` : Promise.resolve([]),
   ])
-  return { booking: b, events, groupSize: group.length || 1, stats: stats[0], reminderSent: !!b.reminderSentAt }
+  return { booking: b, events, groupSize: group.length || 1, stats: stats[0], reminderSent: !!b.reminderSentAt, prefs: cust[0]?.preferences ?? null }
 }
 
 export async function setBookingStatusAction(shopId: string, bookingId: string, status: BookingStatus, opts: { reason?: string; notify?: boolean } = {}): Promise<Result> {
@@ -162,8 +165,8 @@ export async function findCustomerByPhone(shopId: string, phone: string) {
   await requireShop(shopId, 'manager')
   const p = normPhone(phone)
   if (p.length < 7) return null
-  const [c] = await sql<{ id: string; name: string; email: string | null; visits: number }[]>`
-    select c.id, c.name, c.email, (select count(*)::int from app.bookings b where b.customer_id = c.id and b.status = 'completed') as visits
+  const [c] = await sql<{ id: string; name: string; email: string | null; visits: number; preferences: Preferences | null }[]>`
+    select c.id, c.name, c.email, c.preferences, (select count(*)::int from app.bookings b where b.customer_id = c.id and b.status = 'completed') as visits
     from app.customers c where c.shop_id = ${shopId} and c.phone_norm = ${p}
   `
   return c ?? null
@@ -430,6 +433,30 @@ export async function saveCustomerAction(shopId: string, id: string, d: { name: 
     if ((e as { code?: string }).code === '23505') return fail('duplicate_phone')
     throw e
   }
+  return { ok: true }
+}
+
+const prefsSchema = z.object({
+  colors: z.array(z.string().regex(/^#[0-9a-fA-F]{6}$/)).max(6).optional(),
+  shape: z.enum(['round', 'square', 'squoval', 'almond', 'coffin', 'stiletto']).nullish(),
+  length: z.enum(['short', 'medium', 'long']).nullish(),
+  finish: z.enum(['glossy', 'matte', 'chrome', 'glitter']).nullish(),
+  styles: z.array(z.string().regex(/^[a-z]{2,16}$/)).max(8).optional(),
+  hairColor: z.string().trim().max(80).optional(),
+  hairStyle: z.string().trim().max(80).optional(),
+  staffId: uuid.nullish(),
+  notes: z.string().trim().max(500).optional(),
+})
+
+/** The client's preference card: what they usually like, kept by the shop. */
+export async function savePreferencesAction(shopId: string, customerId: string, input: unknown): Promise<Result> {
+  await requireShop(shopId, 'manager')
+  const p = prefsSchema.safeParse(input)
+  if (!p.success || !uuid.safeParse(customerId).success) return fail('invalid')
+  const prefs = cleanPrefs({ ...p.data, shape: p.data.shape ?? undefined, length: p.data.length ?? undefined, finish: p.data.finish ?? undefined, staffId: p.data.staffId ?? null })
+  if (prefs.staffId && !(await listStaff(shopId)).some(s => s.id === prefs.staffId)) return fail('invalid')
+  if (!(await savePreferences(shopId, customerId, prefs))) return fail('not_found')
+  revalidatePath(`/dashboard/${shopId}/customers/${customerId}`)
   return { ok: true }
 }
 

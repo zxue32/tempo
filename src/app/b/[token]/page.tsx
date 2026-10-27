@@ -8,6 +8,7 @@ import { fmtDate, fmtTime, fmtDuration, nowInZone } from '@/lib/tz'
 import { themeVars, themeOf } from '@/lib/themes'
 import { I18nProvider } from '@/components/i18n'
 import { StoreHeader, Initial } from '@/components/store'
+import { encodeDesign } from '@/lib/design'
 import { money } from '@/components/ui'
 import { ManageActions } from './ManageActions'
 import { ConfirmAttendance } from './ConfirmAttendance'
@@ -121,7 +122,7 @@ export default async function ManagePage(props: { params: Promise<{ token: strin
           ))}
 
           <div className="flex flex-wrap gap-2 pt-2">
-            <Link href={`/${shop.slug}/book`} className="s-btn s-btn-ghost s-btn-sm">{t('mg.bookAgain')}</Link>
+            <Link href={`/${shop.slug}/book${first.design ? `?design=${encodeDesign(first.design)}` : ''}`} className="s-btn s-btn-ghost s-btn-sm">{t('mg.bookAgain')}</Link>
             {shop.phone && <a href={`tel:${shop.phone}`} className="s-btn s-btn-ghost s-btn-sm">{t('mg.contactShop')} · {shop.phone}</a>}
           </div>
         </main>

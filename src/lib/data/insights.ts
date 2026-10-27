@@ -1,7 +1,8 @@
 import 'server-only'
 import { sql } from '@/lib/db'
 import { bookingsWithItems, normPhone } from '@/lib/bookings'
-import type { Booking, BookingKind, BookingStatus } from '@/lib/types'
+import type { Booking, BookingKind, BookingStatus, NailDesign, Preferences } from '@/lib/types'
+import { hasPrefs } from '@/lib/prefs'
 
 // ---------------------------------------------------------------- bookings list
 
@@ -29,6 +30,7 @@ export async function searchBookings(shopId: string, f: BookingFilter, limit = 5
 
 export type CustomerRow = {
   id: string; name: string; phone: string | null; email: string | null; notes: string | null; blocked: boolean; createdAt: Date
+  preferences: Preferences | null
   visits: number; noShows: number; cancels: number; lastVisit: string | null; nextVisit: string | null; spentCents: number
 }
 
@@ -65,7 +67,32 @@ export async function getCustomer(shopId: string, id: string, today: string) {
   const history = await bookingsWithItems(await sql<Booking[]>`
     select * from app.bookings where shop_id = ${shopId} and customer_id = ${id} order by date desc, start_min desc limit 200
   `)
-  return { customer: c, history }
+  // the last few distinct nail designs this client booked with, newest first
+  const seen = new Set<string>()
+  const recentDesigns: NailDesign[] = []
+  for (const b of history) {
+    if (!b.design || b.status === 'cancelled') continue
+    const key = JSON.stringify(b.design)
+    if (seen.has(key)) continue
+    seen.add(key); recentDesigns.push(b.design)
+    if (recentDesigns.length >= 4) break
+  }
+  return { customer: c, history, recentDesigns }
+}
+
+/** Preference cards for a set of clients, keyed by customer id (only clients that have one). */
+export async function preferencesFor(customerIds: Array<string | null | undefined>): Promise<Map<string, Preferences>> {
+  const ids = Array.from(new Set(customerIds.filter((x): x is string => !!x)))
+  if (!ids.length) return new Map()
+  const rows = await sql<{ id: string; preferences: Preferences | null }[]>`
+    select id, preferences from app.customers where id = any(${ids}) and preferences is not null and preferences <> '{}'::jsonb
+  `
+  return new Map(rows.filter(r => r.preferences && hasPrefs(r.preferences)).map(r => [r.id, r.preferences!]))
+}
+
+export async function savePreferences(shopId: string, customerId: string, prefs: Preferences): Promise<boolean> {
+  const rows = await sql`update app.customers set preferences = ${sql.json(prefs as never)} where id = ${customerId} and shop_id = ${shopId} returning id`
+  return rows.length > 0
 }
 
 // ---------------------------------------------------------------- reports
