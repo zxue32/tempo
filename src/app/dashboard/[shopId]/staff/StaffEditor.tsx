@@ -58,6 +58,7 @@ function StaffCard({ shopId, industry, hours, services, skills, members, invites
   const [v, setV] = useState({
     name: staff?.name ?? '', nameZh: staff?.nameZh ?? '', bioEn: staff?.bioEn ?? '', bioZh: staff?.bioZh ?? '', color: staff?.color ?? defaultColor,
     photoUrl: staff?.photoUrl ?? null as string | null, active: staff?.active ?? true, bookableOnline: staff?.bookableOnline ?? true, commissionPct: staff?.commissionPct ?? 40,
+    publicPage: staff?.publicPage ?? true, specialties: (staff?.specialties ?? []).join(', '), specialtiesZh: (staff?.specialtiesZh ?? []).join(', '),
   })
   const initialWeek: Week = staff?.defaultWeek && Object.keys(staff.defaultWeek).length ? (staff.defaultWeek as Week)
     : Object.fromEntries(Object.entries(hours).filter(([, h]) => !h.closed).map(([wd, h]) => [wd, { start: h.open, end: h.close, breaks: [] }]))
@@ -75,7 +76,8 @@ function StaffCard({ shopId, industry, hours, services, skills, members, invites
   const save = () => start(async () => {
     setErr(null)
     if (!v.name.trim()) { setErr(t('sf.nameEn') + ' ✕'); return }
-    const r = await saveStaffAction(shopId, staff?.id ?? null, { ...v, nameZh: v.nameZh, bioEn: v.bioEn, bioZh: v.bioZh, defaultWeek: week })
+    const split = (x: string) => x.split(/[,，、\n]/).map(t => t.trim()).filter(Boolean).slice(0, 8)
+    const r = await saveStaffAction(shopId, staff?.id ?? null, { ...v, nameZh: v.nameZh, bioEn: v.bioEn, bioZh: v.bioZh, defaultWeek: week, specialties: split(v.specialties), specialtiesZh: split(v.specialtiesZh) })
     if (!r.ok) { setErr(errText(t, r.error, r.detail)); return }
     const s2 = await setSkillsAction(shopId, r.id, Array.from(sk.entries()).map(([serviceId, durationMin]) => ({ serviceId, durationMin })))
     if (!s2.ok) { setErr(errText(t, s2.error)); return }
@@ -120,6 +122,9 @@ function StaffCard({ shopId, industry, hours, services, skills, members, invites
         <div><label className="lbl" htmlFor={`nz-${staff?.id ?? 'new'}`}>{t('sf.nameZh')}</label><input id={`nz-${staff?.id ?? 'new'}`} className="inp" value={v.nameZh} onChange={e => setV({ ...v, nameZh: e.target.value })} maxLength={60} /></div>
         <div className="sm:col-start-2"><label className="lbl" htmlFor={`be-${staff?.id ?? 'new'}`}>{t('sf.bioEn')}</label><input id={`be-${staff?.id ?? 'new'}`} className="inp" value={v.bioEn} onChange={e => setV({ ...v, bioEn: e.target.value })} maxLength={300} /></div>
         <div><label className="lbl" htmlFor={`bz-${staff?.id ?? 'new'}`}>{t('sf.bioZh')}</label><input id={`bz-${staff?.id ?? 'new'}`} className="inp" value={v.bioZh} onChange={e => setV({ ...v, bioZh: e.target.value })} maxLength={300} /></div>
+        <div><label className="lbl" htmlFor={`sp-${staff?.id ?? 'new'}`}>{t('sf.specialties')}</label><input id={`sp-${staff?.id ?? 'new'}`} className="inp" value={v.specialties} onChange={e => setV({ ...v, specialties: e.target.value })} placeholder={t('sf.specialtiesPh')} maxLength={300} /></div>
+        <div><label className="lbl" htmlFor={`spz-${staff?.id ?? 'new'}`}>{t('sf.specialtiesZh')}</label><input id={`spz-${staff?.id ?? 'new'}`} className="inp" value={v.specialtiesZh} onChange={e => setV({ ...v, specialtiesZh: e.target.value })} placeholder={t('sf.specialtiesZhPh')} maxLength={300} /></div>
+        <label className="chk sm:col-span-2"><input type="checkbox" checked={v.publicPage} onChange={e => setV({ ...v, publicPage: e.target.checked })} />{t('sf.publicPage')}</label>
       </div>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
         <div className="flex items-center gap-2">

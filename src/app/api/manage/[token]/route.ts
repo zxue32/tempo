@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { byToken, rescheduleByToken, cancelByToken, canCustomerChange, confirmByToken, BookingError } from '@/lib/bookings'
+import { byToken, rescheduleByToken, cancelByToken, canCustomerChange, confirmByToken, rateByToken, BookingError } from '@/lib/bookings'
 import { notifyWaitlist } from '@/lib/waitlistNotify'
 import { loadCatalog, listStaff } from '@/lib/data/catalog'
 import { availability, nextAvailable } from '@/lib/availability'
@@ -15,6 +15,7 @@ const body = z.discriminatedUnion('action', [
   z.object({ action: z.literal('reschedule'), date: dateStr, start: minuteOfDay, staffId: uuid.nullable().optional() }),
   z.object({ action: z.literal('cancel'), reason: z.string().max(500).optional() }),
   z.object({ action: z.literal('confirm') }),
+  z.object({ action: z.literal('rate'), rating: z.number().int().min(1).max(5), note: z.string().max(300).optional() }),
 ])
 
 export async function POST(req: Request, ctx: RouteContext<'/api/manage/[token]'>) {
@@ -54,6 +55,10 @@ export async function POST(req: Request, ctx: RouteContext<'/api/manage/[token]'
 
     if (d.action === 'confirm') {
       await confirmByToken(token)
+      return json({ ok: true })
+    }
+    if (d.action === 'rate') {
+      await rateByToken(token, d.rating, trimOrNull(d.note ?? '', 300))
       return json({ ok: true })
     }
 

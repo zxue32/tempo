@@ -170,7 +170,7 @@ export default async function Storefront(props: { params: Promise<{ slug: string
             <ul className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               {team.map(s => (
                 <li key={s.id}>
-                  <Link href={`/${shop.slug}/book?staff=${s.id}`} className="flex flex-col items-center gap-2 text-center no-underline" style={{ color: 'var(--s-ink)' }}>
+                  <Link href={s.publicPage ? `/${shop.slug}/t/${s.id}` : `/${shop.slug}/book?staff=${s.id}`} className="flex flex-col items-center gap-2 text-center no-underline" style={{ color: 'var(--s-ink)' }}>
                     <Initial name={pick(lang, s.name, s.nameZh)} color={s.color} photo={s.photoUrl} size={72} />
                     <b>{pick(lang, s.name, s.nameZh)}</b>
                     {pick(lang, s.bioEn, s.bioZh) && <span className="text-[12.5px] s-muted">{pick(lang, s.bioEn, s.bioZh)}</span>}

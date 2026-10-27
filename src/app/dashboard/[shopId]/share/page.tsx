@@ -79,6 +79,27 @@ export default async function SharePage(props: PageProps<'/dashboard/[shopId]/sh
           </ul>
         </section>
       )}
+
+      {staff.some(s => s.publicPage) && (
+        <section className="card flex flex-col gap-3 p-5">
+          <h2 className="text-[17px] font-bold">{t('sh.profileLinks')}</h2>
+          <p className="text-[13.5px] text-muted">{t('sh.profileLinksHint')}</p>
+          <ul className="flex flex-col divide-y divide-line-soft">
+            {staff.filter(s => s.publicPage).map(s => {
+              const url = `${env.siteUrl}/${shop.slug}/t/${s.id}`
+              return (
+                <li key={s.id} className="flex flex-wrap items-center gap-3 py-2.5">
+                  <Initial name={pick(lang, s.name, s.nameZh)} color={s.color} photo={s.photoUrl} size={34} />
+                  <b className="w-28 truncate">{pick(lang, s.name, s.nameZh)}</b>
+                  <code className="min-w-0 flex-1 truncate text-[12.5px] text-muted">{url.replace(/^https?:\/\//, '')}</code>
+                  <a href={url} target="_blank" rel="noreferrer" className="btn btn-sm btn-ghost">{t('sh.open')} ↗</a>
+                  <CopyButton text={url} />
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
     </div>
   )
 }

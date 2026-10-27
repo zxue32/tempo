@@ -563,6 +563,25 @@ export async function confirmByToken(token: string) {
   return found
 }
 
+/** One rating per visit, from the client's own booking page, once the visit is over. */
+export async function rateByToken(token: string, rating: number, note: string | null) {
+  const found = await byToken(token)
+  if (!found) throw new BookingError('not_found')
+  const first = found.group[0]
+  const over = first.status === 'completed' || (first.status === 'confirmed' && first.endsAt.getTime() < Date.now())
+  if (!over || first.rating != null) throw new BookingError('not_allowed')
+  await sql`update app.bookings set rating = ${rating}, rating_note = ${note}, rated_at = now() where id = ${first.id} and rating is null`
+  return found
+}
+
+export type StaffRating = { staffId: string; count: number; avg: number }
+export async function staffRatings(shopId: string): Promise<StaffRating[]> {
+  return sql<StaffRating[]>`
+    select staff_id, count(*)::int as count, round(avg(rating)::numeric, 1)::float as avg
+    from app.bookings where shop_id = ${shopId} and rating is not null group by staff_id
+  `
+}
+
 export async function shopUpdateDetails(shop: Shop, bookingId: string, d: { guestName?: string | null; guestPhone?: string | null; guestEmail?: string | null; notes?: string | null; internalNote?: string | null }) {
   const patch: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(d)) if (v !== undefined) patch[k] = v

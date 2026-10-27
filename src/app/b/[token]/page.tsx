@@ -11,6 +11,7 @@ import { StoreHeader, Initial } from '@/components/store'
 import { money } from '@/components/ui'
 import { ManageActions } from './ManageActions'
 import { ConfirmAttendance } from './ConfirmAttendance'
+import { RateVisit } from './RateVisit'
 import { env } from '@/lib/env'
 import { emailConfigured } from '@/lib/email'
 
@@ -103,6 +104,10 @@ export default async function ManagePage(props: { params: Promise<{ token: strin
 
           {status === 'confirmed' && first.startsAt.getTime() > Date.now() && (first.startsAt.getTime() - Date.now() < 72 * 3600000 || sp.confirm === '1' || !!first.clientConfirmedAt) && (
             <ConfirmAttendance token={token} confirmed={active.every(b => !!b.clientConfirmedAt)} highlight={sp.confirm === '1'} />
+          )}
+
+          {(status === 'completed' || (status === 'confirmed' && first.endsAt.getTime() < Date.now())) && first.kind !== 'block' && (
+            <RateVisit token={token} staffName={staffName(first.staffId)} rated={first.rating} />
           )}
 
           {status === 'confirmed' && (canChange ? (

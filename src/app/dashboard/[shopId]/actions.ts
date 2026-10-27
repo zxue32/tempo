@@ -185,6 +185,9 @@ const staffSchema = z.object({
   bookableOnline: z.boolean(),
   commissionPct: z.number().min(0).max(100),
   defaultWeek: weekSchema.optional(),
+  publicPage: z.boolean().optional(),
+  specialties: z.array(z.string().trim().min(1).max(30)).max(8).optional(),
+  specialtiesZh: z.array(z.string().trim().min(1).max(30)).max(8).optional(),
 })
 
 export async function saveStaffAction(shopId: string, staffId: string | null, input: z.input<typeof staffSchema>): Promise<Result<{ id: string }>> {
