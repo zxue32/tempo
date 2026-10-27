@@ -1,0 +1,15 @@
+export const TIMEZONES: Array<{ id: string; en: string; zh: string }> = [
+  { id: 'America/New_York', en: 'Eastern (New York)', zh: '美东（纽约）' },
+  { id: 'America/Chicago', en: 'Central (Chicago)', zh: '美中（芝加哥）' },
+  { id: 'America/Denver', en: 'Mountain (Denver)', zh: '山地（丹佛）' },
+  { id: 'America/Phoenix', en: 'Arizona (Phoenix)', zh: '亚利桑那（凤凰城）' },
+  { id: 'America/Los_Angeles', en: 'Pacific (Los Angeles)', zh: '美西（洛杉矶）' },
+  { id: 'America/Anchorage', en: 'Alaska', zh: '阿拉斯加' },
+  { id: 'Pacific/Honolulu', en: 'Hawaii', zh: '夏威夷' },
+  { id: 'America/Toronto', en: 'Toronto', zh: '多伦多' },
+  { id: 'America/Vancouver', en: 'Vancouver', zh: '温哥华' },
+  { id: 'Europe/London', en: 'London', zh: '伦敦' },
+  { id: 'Asia/Shanghai', en: 'China (Shanghai)', zh: '中国（上海）' },
+  { id: 'Asia/Hong_Kong', en: 'Hong Kong', zh: '香港' },
+  { id: 'Australia/Sydney', en: 'Sydney', zh: '悉尼' },
+]
