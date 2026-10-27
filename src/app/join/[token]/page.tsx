@@ -13,8 +13,8 @@ export default async function JoinPage(props: PageProps<'/join/[token]'>) {
   const { token } = await props.params
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) notFound()
   const { t, lang } = await getT()
-  const [inv] = await sql<{ shopId: string; shopName: string; shopNameZh: string | null; staffName: string | null; role: string; acceptedAt: Date | null }[]>`
-    select i.shop_id, s.name as shop_name, s.name_zh as shop_name_zh, st.name as staff_name, i.role, i.accepted_at
+  const [inv] = await sql<{ shopId: string; shopName: string; shopNameZh: string | null; staffName: string | null; staffNameZh: string | null; role: string; acceptedAt: Date | null }[]>`
+    select i.shop_id, s.name as shop_name, s.name_zh as shop_name_zh, st.name as staff_name, st.name_zh as staff_name_zh, i.role, i.accepted_at
     from app.member_invites i join app.shops s on s.id = i.shop_id left join app.staff st on st.id = i.staff_id
     where i.token = ${token}
   `
@@ -34,7 +34,7 @@ export default async function JoinPage(props: PageProps<'/join/[token]'>) {
           ) : (
             <>
               <h1 className="font-display text-[26px] font-extrabold">{t('jn.title', pick(lang, inv.shopName, inv.shopNameZh))}</h1>
-              <p className="text-muted">{t('jn.sub', inv.staffName ?? '', t(inv.role === 'manager' ? 'jn.roleManager' : 'jn.roleStaff'))}</p>
+              <p className="text-muted">{t('jn.sub', inv.staffName ? pick(lang, inv.staffName, inv.staffNameZh) : '', t(inv.role === 'manager' ? 'jn.roleManager' : 'jn.roleStaff'))}</p>
               {user ? (
                 <form action={acceptInviteAction.bind(null, token)} className="flex flex-col gap-3">
                   <p className="text-[14px]">{t('jn.as', user.email)}</p>

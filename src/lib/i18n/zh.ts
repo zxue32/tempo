@@ -957,6 +957,8 @@ export const zh = {
   'ac.resetLinkHint': '24 小时内有效，只能用一次',
   'ac.disable': '停用',
   'ac.enable': '恢复',
+  'bf.answerFirst': '请先回答问题',
+  'mg.saveThisPage': '请截图或收藏这个页面。以后改时间、取消预约，都从这里进入。',
 } as const
 
 export type DictKey = keyof typeof zh

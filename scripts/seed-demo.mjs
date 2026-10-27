@@ -44,7 +44,7 @@ try {
     }
     const staff = []
     for (const [i, [name, zh, color]] of [['Mia', '米娅', '#C2185B'], ['Luna', '露娜', '#7B5EA7'], ['Ivy', '艾薇', '#2E7D6B']].entries()) {
-      const [st] = await tx`insert into app.staff (shop_id, name, name_zh, color, sort, commission_pct) values (${shop.id}, ${name}, ${zh}, ${color}, ${i}, 40) returning id`
+      const [st] = await tx`insert into app.staff (shop_id, name, name_zh, color, sort, commission_pct, default_week) values (${shop.id}, ${name}, ${zh}, ${color}, ${i}, 40, ${tx.json(Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(wd => [String(wd), { start: 600 + i * 30, end: 1110 + i * 30, breaks: [[780 + i * 30, 810 + i * 30]] }])))}) returning id`
       staff.push(st.id)
       for (const [sid, kind] of ids) if (kind === 'service') await tx`insert into app.staff_services (staff_id, service_id) values (${st.id}, ${sid})`
     }

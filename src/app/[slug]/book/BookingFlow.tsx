@@ -24,8 +24,8 @@ const WINDOW = 14
 
 const hasQuestion = (s: Svc) => !!(s.questionEn || s.questionZh)
 
-export function BookingFlow({ shop, today, services, staff, skills, initial }: {
-  shop: FlowShop; today: string; services: Svc[]; staff: Person[]; skills: Skill[]; initial: FlowInitial
+export function BookingFlow({ shop, today, services, staff, skills, initial, emailOn = false }: {
+  shop: FlowShop; today: string; services: Svc[]; staff: Person[]; skills: Skill[]; initial: FlowInitial; emailOn?: boolean
 }) {
   const { t, lang } = useI18n()
   const router = useRouter()
@@ -468,7 +468,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial }: {
                 <div>
                   <label className="s-lbl" htmlFor="bf-email">{t('c.email')} *</label>
                   <input id="bf-email" className="s-inp" type="email" autoComplete="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} maxLength={120} />
-                  <p className="mt-1 text-[12px] s-muted">{t('bf.emailHint')}</p>
+                  {emailOn && <p className="mt-1 text-[12px] s-muted">{t('bf.emailHint')}</p>}
                 </div>
                 <div className="sm:col-span-2">
                   <label className="s-lbl" htmlFor="bf-notes">{t('c.notes')} ({t('c.optional')})</label>
@@ -522,7 +522,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial }: {
               {step === 2 && slot && date ? <b className="tnum block truncate">{fmtDate(date, lang)} · {fmtTime(slot.start, lang)}</b>
                 : <b className="tnum block">{shop.showPrices && total > 0 ? (anyFrom ? t('c.priceFrom', money(total)) : money(total)) : ''}</b>}
               <span className="block truncate s-muted">
-                {step === 2 && slot ? guests.map((_, i) => staffName(slot.staff[i])).join(', ') : ready1 ? fmtDuration(Math.max(...guests.map(gs => durationFor(gs, gs.staffId))), lang) : t('bf.nothing')}
+                {step === 2 && slot ? guests.map((_, i) => staffName(slot.staff[i])).join(', ') : ready1 ? fmtDuration(Math.max(...guests.map(gs => durationFor(gs, gs.staffId))), lang) : guests.some(gs => gs.serviceIds.length > 0) ? t('bf.answerFirst') : t('bf.nothing')}
               </span>
             </div>
             {step === 1 && <button type="button" className="s-btn" disabled={!ready1} onClick={() => goStep(2)}>{t('bf.toTime')}</button>}

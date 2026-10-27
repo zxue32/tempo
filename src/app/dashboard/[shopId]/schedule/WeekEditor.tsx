@@ -46,8 +46,11 @@ export function WeekEditor({ shopId, week, today, hours, staff, shifts, prevShif
     for (const day of days) {
       d[day] = {}
       for (const st of staff) {
-        const w = st.defaultWeek?.[String(weekday(day))]
-        if (w && dayHours(day)) d[day][st.id] = { start: w.start, end: w.end, breaks: (w.breaks ?? []).map(b => [b[0], b[1]]) }
+        // no saved default week = the shop's opening hours, which is also what the staff form shows
+        const open = dayHours(day)
+        const hasDefault = st.defaultWeek && Object.keys(st.defaultWeek).length > 0
+        const w = hasDefault ? st.defaultWeek?.[String(weekday(day))] : open ? { start: open.open, end: open.close, breaks: [] } : undefined
+        if (w && open) d[day][st.id] = { start: w.start, end: w.end, breaks: (w.breaks ?? []).map(b => [b[0], b[1]]) }
       }
     }
   })

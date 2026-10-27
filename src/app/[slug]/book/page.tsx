@@ -1,3 +1,4 @@
+import { emailConfigured } from '@/lib/email'
 import { loadStorefront } from '@/lib/storefront'
 import { loadCatalog } from '@/lib/data/catalog'
 import { makeT, pick } from '@/lib/i18n'
@@ -43,6 +44,7 @@ export default async function BookPage(props: { params: Promise<{ slug: string }
       <StoreHeader shop={shop} lang={lang} back={{ href: `/${shop.slug}`, label: t('c.back') }} />
       <BookingFlow
         shop={flowShop}
+        emailOn={emailConfigured()}
         today={nowInZone(shop.timezone).date}
         services={catalog.services.map(s => ({ id: s.id, kind: s.kind, category: s.category, appliesTo: s.appliesTo, name: s.name, nameZh: s.nameZh, descEn: s.descEn, descZh: s.descZh, durationMin: s.durationMin, priceCents: s.priceCents, priceFrom: s.priceFrom, questionEn: s.questionEn, questionZh: s.questionZh }))}
         staff={staff.map(s => ({ id: s.id, name: s.name, nameZh: s.nameZh, bioEn: s.bioEn, bioZh: s.bioZh, color: s.color, photoUrl: s.photoUrl }))}

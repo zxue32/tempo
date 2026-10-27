@@ -12,6 +12,7 @@ import { money } from '@/components/ui'
 import { ManageActions } from './ManageActions'
 import { ConfirmAttendance } from './ConfirmAttendance'
 import { env } from '@/lib/env'
+import { emailConfigured } from '@/lib/email'
 
 export const metadata = { title: 'Booking', robots: { index: false } }
 
@@ -69,7 +70,9 @@ export default async function ManagePage(props: { params: Promise<{ token: strin
             {status === 'cancelled' && <p className="s-chip self-start !h-auto py-1">{first.cancelledBy === 'shop' ? t('mg.cancelledBy.shop') : t('mg.cancelled')}{first.cancelReason ? ` · ${first.cancelReason}` : ''}</p>}
             {status === 'completed' && <p className="s-chip self-start">{t('mg.completed')}</p>}
             {status === 'no_show' && <p className="s-chip self-start">{t('mg.noShow')}</p>}
-            {isNew && first.guestEmail && <p className="text-[14px] s-muted">{t('mg.emailSent', first.guestEmail)}</p>}
+            {isNew && (emailConfigured() && first.guestEmail
+              ? <p className="text-[14px] s-muted">{t('mg.emailSent', first.guestEmail)}</p>
+              : <p className="s-card self-start px-3 py-2 text-[14.5px] font-semibold">{t('mg.saveThisPage')}</p>)}
           </div>
 
           <section className="s-card overflow-hidden">

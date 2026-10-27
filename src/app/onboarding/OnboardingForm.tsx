@@ -45,7 +45,7 @@ export function OnboardingForm({ lang, siteUrl, invite }: { lang: Lang; siteUrl:
         </div>
       </fieldset>
 
-      <div className="card grid gap-4 p-5 sm:grid-cols-2">
+      <div className="card grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
         <div>
           <label className="lbl" htmlFor="ob-name">{t('ob.shopName')}</label>
           <input id="ob-name" name="name" required maxLength={80} className="inp" value={name} onChange={e => setName(e.target.value)} placeholder="Lacquer Nail Studio" />

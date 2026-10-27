@@ -958,4 +958,6 @@ export const en: Record<DictKey, string> = {
   'ac.resetLinkHint': 'Works once, within 24 hours',
   'ac.disable': 'Disable',
   'ac.enable': 'Enable',
+  'bf.answerFirst': 'Answer the question first',
+  'mg.saveThisPage': 'Please screenshot or bookmark this page. You can reschedule or cancel from here.',
 }
