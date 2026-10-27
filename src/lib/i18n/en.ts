@@ -1065,4 +1065,9 @@ export const en: Record<DictKey, string> = {
   'cal.moveAsk': 'Confirm move',
   'cal.moveConfirm': 'Move it',
   'cal.dragHint': 'Press and hold a booking to drag it to another time or technician.',
+  'sc.view': 'View',
+  'sc.overview': 'Week overview',
+  'sc.table': 'Table',
+  'sc.overviewHint': 'Drag the ends of a bar to change start and finish, drag the middle to shift it. Tap an empty lane to add a shift. Breaks are edited in the table.',
+  'sc.tapToAdd': 'tap to add',
 }

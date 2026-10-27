@@ -1064,6 +1064,11 @@ export const zh = {
   'cal.moveAsk': '确认移动',
   'cal.moveConfirm': '确认移动',
   'cal.dragHint': '按住预约可以拖到别的时间或别的技师。',
+  'sc.view': '视图',
+  'sc.overview': '一周总览',
+  'sc.table': '表格',
+  'sc.overviewHint': '拖动条的两端改上下班时间，拖中间整体移动。点空白处加一天班。午休在“表格”里改。',
+  'sc.tapToAdd': '点这里加班次',
 } as const
 
 export type DictKey = keyof typeof zh
