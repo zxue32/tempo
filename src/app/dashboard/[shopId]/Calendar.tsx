@@ -207,7 +207,7 @@ export function Calendar(props: Props) {
                   {mine.map(b => <Event key={b.id} b={b} color={st.color} top={y(b.startMin)} height={Math.max(ROW * 1.4, y(b.endMin) - y(b.startMin))} onOpen={() => { if (!drag && !justDragged.current) setPanel({ type: 'detail', id: b.id }) }} now={date === today ? nowMin : null}
                     drag={drag?.id === b.id ? drag : null} onDragStart={e => beginDrag(b, ci, e)} />)}
                   {drag && drag.col === ci && drag.id && bookings.find(b => b.id === drag.id)?.staffId !== st.id && (() => { const b = bookings.find(x => x.id === drag.id)!; return (
-                    <span className="pointer-events-none absolute inset-x-1 z-[3] rounded-lg border-2 border-dashed" style={{ top: y(drag.start) + 1, height: Math.max(ROW * 1.4, y(b.endMin) - y(b.startMin)) - 2, borderColor: drag.ok ? '#2E9F64' : '#C2362B', background: drag.ok ? 'rgba(46,159,100,.12)' : 'rgba(194,54,43,.12)' }} />
+                    <span data-ghost className="pointer-events-none absolute inset-x-1 z-[3] rounded-lg border-2 border-dashed" style={{ top: y(drag.start) + 1, height: Math.max(ROW * 1.4, y(b.endMin) - y(b.startMin)) - 2, borderColor: drag.ok ? '#2E9F64' : '#C2362B', background: drag.ok ? 'rgba(46,159,100,.12)' : 'rgba(194,54,43,.12)' }} />
                   ) })()}
                   {date === today && nowMin > range.start && nowMin < range.end && (
                     <span className="pointer-events-none absolute inset-x-0 z-[2] h-[2px] bg-accent" style={{ top: y(nowMin) }} />
