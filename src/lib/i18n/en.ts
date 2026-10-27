@@ -1061,4 +1061,8 @@ export const en: Record<DictKey, string> = {
   'gl.noMatch': 'No matches; try another filter.',
   'd.palette': 'Palette',
   'c.required': 'This is required',
+  'cal.moved': 'Moved',
+  'cal.moveAsk': 'Confirm move',
+  'cal.moveConfirm': 'Move it',
+  'cal.dragHint': 'Press and hold a booking to drag it to another time or technician.',
 }

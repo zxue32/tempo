@@ -1060,6 +1060,10 @@ export const zh = {
   'gl.noMatch': '没有符合的作品，换个筛选试试。',
   'd.palette': '色板',
   'c.required': '这一项必须填',
+  'cal.moved': '已移动',
+  'cal.moveAsk': '确认移动',
+  'cal.moveConfirm': '确认移动',
+  'cal.dragHint': '按住预约可以拖到别的时间或别的技师。',
 } as const
 
 export type DictKey = keyof typeof zh

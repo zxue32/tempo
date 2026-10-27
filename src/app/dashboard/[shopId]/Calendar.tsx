@@ -1,6 +1,6 @@
 'use client'
 import { NailArt, describeDesign } from '@/components/NailArt'
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { useI18n } from '@/components/i18n'
 import { Panel, useToast, errText, timeOptions, ServiceChecklist } from '@/components/dash'
@@ -70,6 +70,77 @@ export function Calendar(props: Props) {
   const go = (d: string) => router.push(`?date=${d}`)
   const done = (msg?: string) => { setPanel(null); router.refresh(); if (msg) toast.show(msg) }
 
+  // ---- drag a booking to another time or technician (press and hold on touch screens)
+  const gridRef = useRef<HTMLDivElement>(null)
+  const [drag, setDrag] = useState<{ id: string; col: number; start: number; dy: number; dx: number; ok: boolean } | null>(null)
+  const [moveAsk, setMoveAsk] = useState<{ b: Booking; staffId: string; start: number; why: string | null } | null>(null)
+  const [movePending, startMove] = useTransition()
+  const justDragged = useRef(false)   // the click that follows a drop must not open the detail panel
+  const colOf = (clientX: number) => {
+    const cells = gridRef.current?.querySelectorAll<HTMLElement>('[data-col]')
+    if (!cells) return -1
+    let i = -1
+    cells.forEach((c, k) => { const r = c.getBoundingClientRect(); if (clientX >= r.left && clientX < r.right) i = k })
+    return i
+  }
+  const fitsAt = (b: Booking, staffId: string, start: number) => {
+    const st = day.staff.find(x => x.id === staffId)
+    if (!st) return 'invalid'
+    const dur = b.endMin - b.startMin
+    const why = blocker(b.kind === 'block' ? { ...day, buffer: 0 } : day, st, start, dur, new Set([b.id]), { ignoreShift: b.kind === 'block' })
+    if (why === 'booked' || why === 'invalid') return why
+    if (b.kind !== 'block' && (b.items ?? []).some(it => it.serviceId && it.kind === 'service' && !st.skills.has(it.serviceId))) return 'skill'
+    return why
+  }
+  const beginDrag = (b: Booking, col: number, e: React.PointerEvent) => {
+    if (b.status !== 'confirmed') return
+    const startY = e.clientY, startX = e.clientX
+    const el = e.currentTarget as HTMLElement
+    let active = e.pointerType === 'mouse'
+    let timer: ReturnType<typeof setTimeout> | null = null
+    if (!active) timer = setTimeout(() => { active = true; try { navigator.vibrate?.(10) } catch { /* no haptics */ }; setDrag({ id: b.id, col, start: b.startMin, dy: 0, dx: 0, ok: true }) }, 280)
+    const onMove = (ev: PointerEvent) => {
+      if (!active) { if (Math.abs(ev.clientY - startY) > 8 || Math.abs(ev.clientX - startX) > 8) { if (timer) clearTimeout(timer); cleanup() } return }
+      ev.preventDefault()
+      const dy = ev.clientY - startY
+      const snapped = Math.max(range.start, Math.min(range.end - (b.endMin - b.startMin), b.startMin + Math.round(dy / ROW) * 15))
+      const c = colOf(ev.clientX)
+      const newCol = c < 0 ? col : c
+      const staffId = columns[newCol]?.id ?? b.staffId
+      setDrag({ id: b.id, col: newCol, start: snapped, dy: (snapped - b.startMin) / 15 * ROW, dx: 0, ok: fitsAt(b, staffId, snapped) === null })
+    }
+    // once the hold has activated, stop the page from scrolling under the finger
+    const onTouchMove = (ev: TouchEvent) => { if (active) ev.preventDefault() }
+    const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('pointercancel', onUp); window.removeEventListener('touchmove', onTouchMove); el.releasePointerCapture?.(e.pointerId) }
+    const onUp = (ev: PointerEvent) => {
+      if (timer) clearTimeout(timer)
+      cleanup()
+      if (!active) return
+      justDragged.current = true
+      setTimeout(() => { justDragged.current = false }, 400)
+      const c = colOf(ev.clientX)
+      const newCol = c < 0 ? col : c
+      const staffId = columns[newCol]?.id ?? b.staffId
+      const dy = ev.clientY - startY
+      const snapped = Math.max(range.start, Math.min(range.end - (b.endMin - b.startMin), b.startMin + Math.round(dy / ROW) * 15))
+      setDrag(null)
+      if (staffId === b.staffId && snapped === b.startMin) return
+      setMoveAsk({ b, staffId, start: snapped, why: fitsAt(b, staffId, snapped) })
+    }
+    try { el.setPointerCapture(e.pointerId) } catch { /* ignore */ }
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('touchmove', onTouchMove, { passive: false })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    if (active) setDrag({ id: b.id, col, start: b.startMin, dy: 0, dx: 0, ok: true })
+  }
+  const confirmMove = (notify: boolean, force: boolean) => startMove(async () => {
+    if (!moveAsk) return
+    const r = await moveBookingAction(shop.id, moveAsk.b.id, { date, start: moveAsk.start, staffId: moveAsk.staffId, force, notify })
+    if (r.ok) { setMoveAsk(null); router.refresh(); toast.show(t('cal.moved')) }
+    else toast.show(errText(t, r.error, r.detail))
+  })
+
   const hourMarks: number[] = []
   for (let m = range.start; m < range.end; m += 60) hourMarks.push(m)
 
@@ -90,13 +161,13 @@ export function Calendar(props: Props) {
           }}>+ {t('cal.newBooking')}</button>
         )}
       </div>
-      <p className="text-[13px] text-muted">{hours ? t('cal.hint') : t('cal.closedDay')}</p>
+      <p className="text-[13px] text-muted">{hours ? `${t('cal.hint')} ${t('cal.dragHint')}` : t('cal.closedDay')}</p>
 
       {columns.length === 0 ? (
         <div className="card p-8 text-center text-muted">{t('cal.noStaff')}</div>
       ) : (
         <div className="tbl-wrap max-h-[75vh] !overflow-auto">
-          <div className="grid min-w-max" style={{ gridTemplateColumns: `52px repeat(${columns.length}, minmax(150px, 1fr))` }}>
+          <div ref={gridRef} className="grid min-w-max" style={{ gridTemplateColumns: `52px repeat(${columns.length}, minmax(150px, 1fr))` }}>
             <div className="sticky left-0 top-0 z-20 border-b border-line bg-surface" />
             {columns.map(st => {
               const sh = shifts.find(s => s.staffId === st.id)
@@ -112,11 +183,11 @@ export function Calendar(props: Props) {
                 <span key={m} className="tnum absolute right-2 -translate-y-1/2 text-[11px] text-muted" style={{ top: y(m) || 6 }}>{fmtTimeShort(m, lang)}</span>
               ))}
             </div>
-            {columns.map(st => {
+            {columns.map((st, ci) => {
               const sh = shifts.find(s => s.staffId === st.id)
               const mine = bookings.filter(b => b.staffId === st.id && b.status !== 'cancelled')
               return (
-                <div key={st.id} className="hatch relative cursor-copy border-l border-line" style={{ height: rows * ROW, backgroundSize: 'auto' }}
+                <div key={st.id} data-col className="hatch relative cursor-copy border-l border-line" style={{ height: rows * ROW, backgroundSize: 'auto' }}
                   onClick={e => {
                     if ((e.target as HTMLElement).closest('[data-ev]')) return
                     const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
@@ -130,7 +201,11 @@ export function Calendar(props: Props) {
                   {sh?.breaks.map(b => (
                     <span key={b[0]} className="pointer-events-none absolute inset-x-0" style={{ top: y(b[0]), height: y(b[1]) - y(b[0]), backgroundImage: 'repeating-linear-gradient(135deg, rgba(22,23,27,.13) 0 2px, transparent 2px 5px)' }} />
                   ))}
-                  {mine.map(b => <Event key={b.id} b={b} color={st.color} top={y(b.startMin)} height={Math.max(ROW * 1.4, y(b.endMin) - y(b.startMin))} onOpen={() => setPanel({ type: 'detail', id: b.id })} now={date === today ? nowMin : null} />)}
+                  {mine.map(b => <Event key={b.id} b={b} color={st.color} top={y(b.startMin)} height={Math.max(ROW * 1.4, y(b.endMin) - y(b.startMin))} onOpen={() => { if (!drag && !justDragged.current) setPanel({ type: 'detail', id: b.id }) }} now={date === today ? nowMin : null}
+                    drag={drag?.id === b.id ? drag : null} onDragStart={e => beginDrag(b, ci, e)} />)}
+                  {drag && drag.col === ci && drag.id && bookings.find(b => b.id === drag.id)?.staffId !== st.id && (() => { const b = bookings.find(x => x.id === drag.id)!; return (
+                    <span className="pointer-events-none absolute inset-x-1 z-[3] rounded-lg border-2 border-dashed" style={{ top: y(drag.start) + 1, height: Math.max(ROW * 1.4, y(b.endMin) - y(b.startMin)) - 2, borderColor: drag.ok ? '#2E9F64' : '#C2362B', background: drag.ok ? 'rgba(46,159,100,.12)' : 'rgba(194,54,43,.12)' }} />
+                  ) })()}
                   {date === today && nowMin > range.start && nowMin < range.end && (
                     <span className="pointer-events-none absolute inset-x-0 z-[2] h-[2px] bg-accent" style={{ top: y(nowMin) }} />
                   )}
@@ -149,6 +224,9 @@ export function Calendar(props: Props) {
         <Legend className="hatch" style={{ border: '1px solid #DADDE3' }} label={t('cal.legendOff')} />
       </div>
 
+      {moveAsk && (
+        <MoveAsk shop={shop} ask={moveAsk} staff={columns} pending={movePending} onCancel={() => setMoveAsk(null)} onConfirm={confirmMove} />
+      )}
       {panel?.type === 'add' && (
         <AddPanel shop={shop} date={date} day={day} range={range} staff={columns.filter(c => c.active)} services={services} skills={skills}
           initialStaff={panel.staffId} initialStart={panel.start} onClose={() => setPanel(null)} onDone={() => done(t('c.saved'))} />
@@ -165,7 +243,10 @@ function Legend({ style, label, className = '' }: { style: React.CSSProperties; 
   return <span className="inline-flex items-center gap-1.5"><span className={`inline-block h-2.5 w-4 rounded-[3px] ${className}`} style={style} />{label}</span>
 }
 
-function Event({ b, color, top, height, onOpen, now }: { b: Booking; color: string; top: number; height: number; onOpen: () => void; now: number | null }) {
+function Event({ b, color, top, height, onOpen, now, drag, onDragStart }: {
+  b: Booking; color: string; top: number; height: number; onOpen: () => void; now: number | null
+  drag: { start: number; dy: number; ok: boolean; col: number } | null; onDragStart: (e: React.PointerEvent) => void
+}) {
   const { t, lang } = useI18n()
   const live = b.status === 'confirmed' && now != null && now >= b.startMin && now < b.endMin
   let style: React.CSSProperties = { background: `color-mix(in srgb, ${color} 15%, white)`, border: `1px solid color-mix(in srgb, ${color} 50%, white)`, color: '#16171B' }
@@ -175,11 +256,45 @@ function Event({ b, color, top, height, onOpen, now }: { b: Booking; color: stri
   if (b.kind === 'block') style = { backgroundImage: 'repeating-linear-gradient(135deg,#EBEDF1 0 6px,#fff 6px 12px)', border: '1px solid #DADDE3', color: '#575B65' }
   const items = (b.items ?? []).map(i => pick(lang, i.name, i.nameZh)).join(' + ')
   return (
-    <button type="button" data-ev onClick={onOpen} className="absolute inset-x-1 z-[1] overflow-hidden rounded-lg px-2 py-1 text-left text-[12px] leading-tight hover:shadow-md" style={{ top: top + 1, height: height - 2, ...style }}>
-      <span className="tnum block text-[11px] opacity-80">{fmtTime(b.startMin, lang)}–{fmtTime(b.endMin, lang)}{b.status === 'completed' ? ' ✓' : b.actualStart ? ' ▶' : ''}{b.status === 'confirmed' && b.clientConfirmedAt ? ' ☑' : ''}</span>
+    <button type="button" data-ev onClick={onOpen} onPointerDown={onDragStart}
+      className={`absolute inset-x-1 z-[1] overflow-hidden rounded-lg px-2 py-1 text-left text-[12px] leading-tight hover:shadow-md ${b.status === 'confirmed' ? 'cursor-grab active:cursor-grabbing' : ''} ${drag ? 'z-[4] shadow-xl' : ''}`}
+      style={{ top: top + 1, height: height - 2, ...style, ...(drag ? { transform: `translateY(${drag.dy}px)`, opacity: 0.9, outline: `2px solid ${drag.ok ? '#2E9F64' : '#C2362B'}` } : {}) }}>
+      <span className="tnum block text-[11px] opacity-80">{drag ? `${fmtTime(drag.start, lang)}–${fmtTime(drag.start + (b.endMin - b.startMin), lang)}` : `${fmtTime(b.startMin, lang)}–${fmtTime(b.endMin, lang)}`}{b.status === 'completed' ? ' ✓' : b.actualStart ? ' ▶' : ''}{b.status === 'confirmed' && b.clientConfirmedAt ? ' ☑' : ''}</span>
       <b className="block truncate">{b.kind === 'block' ? (b.notes || t('bk.block')) : b.guestName || t(`bk.${b.kind}`)}</b>
       {b.kind !== 'block' && <span className="block truncate opacity-85">{items}</span>}
     </button>
+  )
+}
+
+// ---------------------------------------------------------------- confirm a drag
+
+function MoveAsk({ shop, ask, staff, pending, onCancel, onConfirm }: {
+  shop: ShopLite; ask: { b: Booking; staffId: string; start: number; why: string | null }; staff: Staff[]; pending: boolean
+  onCancel: () => void; onConfirm: (notify: boolean, force: boolean) => void
+}) {
+  const { t, lang } = useI18n()
+  const [notify, setNotify] = useState(!!ask.b.guestEmail)
+  const [force, setForce] = useState(false)
+  const st = staff.find(s => s.id === ask.staffId)
+  const blockedHard = ask.why === 'booked' || ask.why === 'invalid'
+  const needsForce = !!ask.why && !blockedHard
+  const who = ask.b.kind === 'block' ? (ask.b.notes || t('bk.block')) : ask.b.guestName || t(`bk.${ask.b.kind}`)
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface p-4 shadow-2xl" role="dialog" aria-label={t('cal.moveAsk')}>
+      <div className="mx-auto flex max-w-2xl flex-col gap-3">
+        <div className="text-[15px]">
+          <b>{who}</b> → <b className="tnum">{fmtTime(ask.start, lang)}–{fmtTime(ask.start + (ask.b.endMin - ask.b.startMin), lang)}</b>
+          {st && ask.staffId !== ask.b.staffId && <> · <b>{pick(lang, st.name, st.nameZh)}</b></>}
+        </div>
+        {ask.why && <p className={blockedHard ? 'err' : 'font-semibold text-warn'}>{t(`cal.why.${ask.why}` as DictKey)}</p>}
+        {needsForce && <label className="chk text-[13px]"><input type="checkbox" checked={force} onChange={e => setForce(e.target.checked)} />{t('cal.force')}</label>}
+        {ask.b.guestEmail && ask.b.kind !== 'block' && <label className="chk text-[13px]"><input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} />{t('cal.notifyCustomer')}</label>}
+        <div className="flex gap-2">
+          <button className="btn btn-primary" disabled={pending || blockedHard || (needsForce && !force)} onClick={() => onConfirm(notify, force)}>{t('cal.moveConfirm')}</button>
+          <button className="btn btn-ghost" onClick={onCancel}>{t('c.cancel')}</button>
+        </div>
+      </div>
+    </div>
   )
 }
 
