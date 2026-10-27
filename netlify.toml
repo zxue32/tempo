@@ -4,3 +4,9 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+# Netlify's Next.js runtime: turns server pages, route handlers and server actions into functions.
+# Netlify normally adds it on its own, but deploys uploaded through the API skip that, so it is listed here.
+# No version pin: Netlify installs the current release on each build.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
