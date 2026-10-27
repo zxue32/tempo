@@ -1,11 +1,10 @@
-# Sends "see you tomorrow" reminder emails every hour.
+# Backup only: the site's own scheduled function (netlify/functions/cron.mjs) calls the
+# reminder endpoint every hour. Run this by hand from the Actions tab if you ever need to.
 # Repository → Settings → Secrets and variables → Actions → add:
-#   SITE_URL     e.g. https://your-site.netlify.app   (no trailing slash)
+#   SITE_URL     e.g. https://tempo-booking.netlify.app   (no trailing slash)
 #   CRON_SECRET  the same value as the CRON_SECRET environment variable on the site
-name: Booking reminders
+name: Booking reminders (manual)
 on:
-  schedule:
-    - cron: '7 * * * *'
   workflow_dispatch:
 jobs:
   remind:

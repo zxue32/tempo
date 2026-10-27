@@ -83,7 +83,10 @@ export default async function MyDay(props: PageProps<'/dashboard/[shopId]/me'>) 
           <Initial name={pick(lang, me.name, me.nameZh)} color={me.color} photo={me.photoUrl} size={44} />
           <div>
             <h1 className="font-display text-[24px] font-extrabold leading-tight tracking-tight">{canPick && me.id !== member.staffId ? pick(lang, me.name, me.nameZh) : t('me.title')}</h1>
-            <p className="text-[13.5px] text-muted">{shift ? t('me.shift', fmtTime(shift.startMin, lang), fmtTime(shift.endMin, lang)) : t('me.off')}</p>
+            <p className="text-[13.5px] text-muted">
+              {me.id === member.staffId && <>{pick(lang, me.name, me.nameZh)} · </>}
+              {shift ? t('me.shift', fmtTime(shift.startMin, lang), fmtTime(shift.endMin, lang)) : t('me.off')}
+            </p>
           </div>
         </div>
         {canPick && (

@@ -9,3 +9,5 @@ playwright-report
 next-env.d.ts
 
 .env*.local
+.netlify
+deploy-*.zip

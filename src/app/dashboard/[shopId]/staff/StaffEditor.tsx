@@ -2,7 +2,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { useI18n } from '@/components/i18n'
-import { useToast, errText } from '@/components/dash'
+import { useToast, errText, CopyButton } from '@/components/dash'
 import { pick, type DictKey } from '@/lib/i18n'
 import { hhmm, parseHHMM } from '@/lib/tz'
 import { STAFF_COLORS } from '@/lib/themes'
@@ -13,7 +13,7 @@ type Member = { userId: string; email: string; role: string; staffId: string | n
 type Week = Record<string, { start: number; end: number; breaks: [number, number][] }>
 
 export function StaffEditor({ shopId, industry, hours, staff, services, skills, members, invites }: {
-  shopId: string; industry: Industry; hours: Hours; staff: Staff[]; services: Service[]; skills: Skill[]; members: Member[]; invites: { email: string; staffId: string | null }[]
+  shopId: string; industry: Industry; hours: Hours; staff: Staff[]; services: Service[]; skills: Skill[]; members: Member[]; invites: { email: string; staffId: string | null; link: string }[]
 }) {
   const { t } = useI18n()
   const router = useRouter()
@@ -48,7 +48,7 @@ export function StaffEditor({ shopId, industry, hours, staff, services, skills, 
 }
 
 function StaffCard({ shopId, industry, hours, services, skills, members, invites, staff, defaultColor, onDone }: {
-  shopId: string; industry: Industry; hours: Hours; services: Service[]; skills: Skill[]; members: Member[]; invites: { email: string; staffId: string | null }[]
+  shopId: string; industry: Industry; hours: Hours; services: Service[]; skills: Skill[]; members: Member[]; invites: { email: string; staffId: string | null; link: string }[]
   staff: Staff | null; defaultColor: string; onDone: () => void
 }) {
   const { t, lang } = useI18n()
@@ -65,6 +65,7 @@ function StaffCard({ shopId, industry, hours, services, skills, members, invites
   const mine = new Map(skills.filter(k => k.staffId === staff?.id).map(k => [k.serviceId, k.durationMin]))
   const [sk, setSk] = useState<Map<string, number | null>>(isNew ? new Map(services.filter(s => s.active).map(s => [s.id, null])) : mine)
   const [inviteEmail, setInviteEmail] = useState('')
+  const [link, setLink] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [pending, start] = useTransition()
   const linked = members.find(m => m.staffId === staff?.id)
@@ -175,14 +176,19 @@ function StaffCard({ shopId, industry, hours, services, skills, members, invites
           <span className="lbl !mb-0">{t('sf.login')}</span>
           {linked ? <span className="chip chip-ok self-start">{t('sf.joined', linked.email)}</span> : (
             <>
-              <p className="hint !mt-0">{t('sf.loginHint')}</p>
-              {invited && <span className="chip self-start">{t('sf.invited', invited.email)}</span>}
+              <p className="hint !mt-0">{t('sf.loginHintLink')}</p>
+              {(link || invited?.link) && (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-bg p-2">
+                  <code className="min-w-0 flex-1 truncate text-[12.5px]">{link || invited?.link}</code>
+                  <CopyButton text={(link || invited?.link)!} />
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
-                <input type="email" className="inp !w-72 max-w-full" placeholder="name@example.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} aria-label={t('c.email')} />
-                <button className="btn btn-sm" disabled={!inviteEmail || pending} onClick={() => start(async () => {
+                <input type="email" className="inp !w-72 max-w-full" placeholder={t('sf.inviteEmailPh')} value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} aria-label={t('c.email')} />
+                <button className="btn btn-sm" disabled={pending} onClick={() => start(async () => {
                   const r = await inviteStaffAction(shopId, staff.id, inviteEmail)
-                  if (r.ok) { toast.show(t('sf.invited', inviteEmail)); setInviteEmail(''); onDone() } else setErr(errText(t, r.error, r.detail))
-                })}>{t('sf.invite')}</button>
+                  if (r.ok) { setLink(r.link); toast.show(r.emailed ? t('sf.invited', inviteEmail) : t('sf.linkReady')); setInviteEmail('') } else setErr(errText(t, r.error, r.detail))
+                })}>{invited || link ? t('sf.newLink') : t('sf.makeLink')}</button>
               </div>
             </>
           )}

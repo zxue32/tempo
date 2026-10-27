@@ -1,6 +1,15 @@
 // Creates (or refreshes) a live demo shop with 3 technicians and a 3-week roster, for trying things out and load tests.
-// Usage: DATABASE_URL=... node scripts/seed-demo.mjs [slug=demo-nails] [owner-email=owner@example.com]
+// Usage: DATABASE_URL=... OWNER_PASSWORD=... node scripts/seed-demo.mjs [slug=demo-nails] [owner-email=owner@example.com]
+// OWNER_PASSWORD sets (or resets) the owner's password so you can sign in as them.
 import postgres from 'postgres'
+import { randomBytes, scryptSync } from 'node:crypto'
+
+// same format as src/lib/password.ts
+const hashPassword = pw => {
+  const salt = randomBytes(16)
+  const key = scryptSync(pw.normalize('NFKC'), salt, 32, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 })
+  return ['scrypt', 16384, 8, 1, salt.toString('base64url'), key.toString('base64url')].join('$')
+}
 const url = process.env.DATABASE_URL
 if (!url) { console.error('Set DATABASE_URL'); process.exit(2) }
 const [slug = 'demo-nails', ownerEmail = 'owner@example.com'] = process.argv.slice(2)
@@ -12,8 +21,9 @@ const day = d => { const t = new Date(today + 'T12:00:00Z'); t.setUTCDate(t.getU
 try {
   await sql.begin(async tx => {
     // OWNER_ID lets a test seed the shop for an account it will sign in as
-    const [u] = await tx`insert into app.users (id, email) values (coalesce(${process.env.OWNER_ID ?? null}::uuid, gen_random_uuid()), ${ownerEmail})
-      on conflict (lower(email)) do update set email = excluded.email returning id`
+    const pw = process.env.OWNER_PASSWORD ? hashPassword(process.env.OWNER_PASSWORD) : null
+    const [u] = await tx`insert into app.users (id, email, password_hash) values (coalesce(${process.env.OWNER_ID ?? null}::uuid, gen_random_uuid()), ${ownerEmail}, ${pw})
+      on conflict (lower(email)) do update set email = excluded.email, password_hash = coalesce(excluded.password_hash, app.users.password_hash) returning id`
     await tx`delete from app.shops where slug = ${slug}`
     const [shop] = await tx`
       insert into app.shops (slug, industry, name, name_zh, phone, email, address, city, timezone, default_lang, theme, notify_emails, owner_id, status, live_at, submitted_at)

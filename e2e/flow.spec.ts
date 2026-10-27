@@ -1,5 +1,5 @@
 // End-to-end: owner opens a shop → admin approves → client books, reschedules, cancels → owner sees it all.
-// Runs against `next dev` with DEV_FAKE_AUTH=1 (email-only sign-in) and a local Postgres.
+// Runs against `next dev` with real sign-up / sign-in and a local Postgres.
 import { test, expect, type Page, type BrowserContext } from '@playwright/test'
 import postgres from 'postgres'
 
@@ -8,14 +8,27 @@ const slug = `e2e-${Date.now().toString(36)}`
 const owner = `owner-${slug}@example.com`
 const shots = process.env.E2E_SHOTS ?? 'test-results/shots'
 
-async function asUser(ctx: BrowserContext, email: string) {
+const PASSWORD = 'e2e-password-123'
+/** Signs up (or signs in, when the account already exists from an earlier run) through the real forms. */
+async function asUser(ctx: BrowserContext, email: string, setupCode?: string) {
   const page = await ctx.newPage()
-  await page.goto('/login')
+  await page.goto('/signup?next=/dashboard')
   await page.locator('#email').fill(email)
-  // With DEV_FAKE_AUTH there is no password field.
-  if (await page.locator('#password').count()) await page.locator('#password').fill('password123')
-  await page.getByRole('button', { name: 'Sign in' }).click()
-  await page.waitForURL(u => !u.pathname.startsWith('/login'))
+  await page.locator('#password').fill(PASSWORD)
+  if (setupCode) {
+    await page.getByText("I'm the platform admin").click()
+    await page.locator('#setupCode').fill(setupCode)
+  }
+  await page.getByRole('button', { name: 'Sign up' }).click()
+  await page.waitForURL(u => !u.pathname.startsWith('/signup') || false, { timeout: 8000 }).catch(() => {})
+  if (new URL(page.url()).pathname.startsWith('/signup')) {
+    await expect(page.getByText('That email already has an account')).toBeVisible()
+    await page.goto('/login?next=/dashboard')
+    await page.locator('#email').fill(email)
+    await page.locator('#password').fill(PASSWORD)
+    await page.getByRole('button', { name: 'Sign in' }).click()
+    await page.waitForURL(u => !u.pathname.startsWith('/login'))
+  }
   return page
 }
 const english = (ctx: BrowserContext) => ctx.addCookies([{ name: 'lang', value: 'en', domain: 'localhost', path: '/' }])
@@ -29,9 +42,17 @@ function targetDate() {
   return d.toISOString().slice(0, 10)
 }
 
+test.beforeAll(async () => {
+  // the admin account is created through the real sign-up with the setup code; start clean so a stale one can't interfere
+  const sql = postgres(DB, { max: 1 })
+  await sql`delete from app.users where lower(email) = 'admin@example.com'`
+  await sql.end()
+})
+
 test.afterAll(async () => {
   const sql = postgres(DB, { max: 1 })
   await sql`delete from app.shops where slug = ${slug}`
+  await sql`delete from app.users where lower(email) in (${owner}, 'admin@example.com')`
   await sql.end()
 })
 
@@ -86,7 +107,7 @@ test('shop owner → approval → client books, reschedules and cancels', async 
   // ---------------------------------------------------------------- platform admin approves
   const adminCtx = await browser.newContext()
   await english(adminCtx)
-  const a = await asUser(adminCtx, 'admin@example.com')
+  const a = await asUser(adminCtx, 'admin@example.com', 'e2e-setup-code')
   await a.goto('/admin?status=pending')
   await snap(a, '02-admin-queue')
   await a.getByRole('link', { name: 'E2E Nails' }).click()

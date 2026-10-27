@@ -15,6 +15,7 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
           <nav className="flex gap-1 text-[14px] font-semibold">
             <Link href="/admin" className="rounded-lg px-3 py-1.5 text-ink-2 no-underline hover:bg-bg">{t('ad.shops')}</Link>
             <Link href="/admin/invites" className="rounded-lg px-3 py-1.5 text-ink-2 no-underline hover:bg-bg">{t('ad.invites')}</Link>
+            <Link href="/admin/accounts" className="rounded-lg px-3 py-1.5 text-ink-2 no-underline hover:bg-bg">{t('ac.title')}</Link>
             <Link href="/dashboard" className="rounded-lg px-3 py-1.5 text-ink-2 no-underline hover:bg-bg">{t('ad.myShops')}</Link>
           </nav>
           <div className="ml-auto flex items-center gap-2">

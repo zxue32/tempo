@@ -12,7 +12,8 @@ import { integrityCheck } from '@/lib/data/pilot'
 import { markWaitlist } from '@/lib/data/waitlist'
 import { notifyWaitlist } from '@/lib/waitlistNotify'
 import { replayPaperBook, type ReplayResult } from '@/lib/replay'
-import { mailCustomer, mailAdminsNewApplication, mailStaffInvite } from '@/lib/email'
+import { mailCustomer, mailAdminsNewApplication, mailStaffInvite, emailConfigured } from '@/lib/email'
+import { env } from '@/lib/env'
 import { storeImage, UploadError } from '@/lib/storage'
 import { uuid, dateStr, minuteOfDay, guestsSchema, emailRe } from '@/lib/validate'
 import { isValidTimeZone } from '@/lib/tz'
@@ -220,30 +221,24 @@ export async function setSkillsAction(shopId: string, staffId: string, skills: A
   return { ok: true }
 }
 
-export async function inviteStaffAction(shopId: string, staffId: string, email: string, role: 'staff' | 'manager' = 'staff'): Promise<Result> {
+/** Creates a join link for this staff member. Whoever opens it and signs in becomes this person's login (no email matching). */
+export async function inviteStaffAction(shopId: string, staffId: string, email: string, role: 'staff' | 'manager' = 'staff'): Promise<Result<{ link: string; emailed: boolean }>> {
   const { user } = await requireShop(shopId, 'manager')
   const e = email.trim().toLowerCase()
-  if (!emailRe.test(e)) return fail('invalid', 'email')
+  if (e && !emailRe.test(e)) return fail('invalid', 'email')
   const shop = (await getShop(shopId))!
   const [st] = await sql`select 1 from app.staff where id = ${staffId} and shop_id = ${shopId}`
   if (!st) return fail('not_found')
   await sql`delete from app.member_invites where shop_id = ${shopId} and staff_id = ${staffId} and accepted_at is null`
+  const token = randomBytes(18).toString('base64url')
   await sql`
     insert into app.member_invites (shop_id, email, role, staff_id, token, invited_by)
-    values (${shopId}, ${e}, ${role === 'manager' ? 'manager' : 'staff'}, ${staffId}, ${randomBytes(18).toString('base64url')}, ${user.id})
+    values (${shopId}, ${e || '-'}, ${role === 'manager' ? 'manager' : 'staff'}, ${staffId}, ${token}, ${user.id})
   `
-  // if they already have an account, link right away
-  const [existing] = await sql<{ id: string; lang: Lang }[]>`select id, lang from app.users where lower(email) = ${e}`
-  if (existing) {
-    await sql`
-      insert into app.shop_members (shop_id, user_id, role, staff_id) values (${shopId}, ${existing.id}, ${role}, ${staffId})
-      on conflict (shop_id, user_id) do update set staff_id = excluded.staff_id,
-        role = case when app.shop_members.role = 'owner' then 'owner' else excluded.role end
-    `
-    await sql`update app.member_invites set accepted_at = now() where shop_id = ${shopId} and staff_id = ${staffId} and lower(email) = ${e}`
-  }
-  await mailStaffInvite(shop, e, existing?.lang ?? shop.defaultLang)
-  return { ok: true }
+  const link = `${env.siteUrl}/join/${token}`
+  const emailed = !!e && emailConfigured()
+  if (emailed) await mailStaffInvite(shop, e, shop.defaultLang, link)
+  return { ok: true, link, emailed }
 }
 
 export async function removeMemberAction(shopId: string, userId: string): Promise<Result> {

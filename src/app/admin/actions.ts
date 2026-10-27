@@ -8,6 +8,9 @@ import { mailOwnerReview } from '@/lib/email'
 import { normalizeSlug, slugProblem } from '@/lib/slug'
 import { isUniqueViolation } from '@/lib/db'
 import type { ShopStatus } from '@/lib/types'
+import { createResetToken } from '@/lib/accounts'
+import { sql } from '@/lib/db'
+import { env } from '@/lib/env'
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string; detail?: string }
 
@@ -74,5 +77,23 @@ export async function deleteInviteAction(code: string): Promise<Result> {
   await requireAdmin()
   await deleteInvite(code)
   revalidatePath('/admin/invites')
+  return { ok: true }
+}
+
+// ---------------------------------------------------------------- accounts
+
+/** A single-use password reset link (24 h) to send to the person yourself, e.g. by text or WeChat. */
+export async function resetLinkAction(userId: string): Promise<Result<{ link: string }>> {
+  const admin = await requireAdmin()
+  if (!/^[0-9a-f-]{36}$/i.test(userId)) return { ok: false, error: 'invalid' }
+  const token = await createResetToken(userId, admin.id)
+  return { ok: true, link: `${env.siteUrl}/reset/${token}` }
+}
+
+export async function setDisabledAction(userId: string, disabled: boolean): Promise<Result> {
+  const admin = await requireAdmin()
+  if (!/^[0-9a-f-]{36}$/i.test(userId) || userId === admin.id) return { ok: false, error: 'invalid' }
+  await sql`update app.users set disabled = ${disabled} where id = ${userId}`
+  if (disabled) await sql`delete from app.sessions where user_id = ${userId}`
   return { ok: true }
 }

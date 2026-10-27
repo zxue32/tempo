@@ -3,8 +3,9 @@
 -- Row Level Security is also enabled with no policies, so even if the schema were exposed,
 -- the anon/authenticated keys could not read or write anything. The server connects as the table owner.
 
-create extension if not exists pgcrypto;
-create extension if not exists btree_gist;
+-- extensions live in their own schema (Supabase's convention); gen_random_uuid() is built in since Postgres 13
+create schema if not exists extensions;
+create extension if not exists btree_gist with schema extensions;
 
 create schema if not exists app;
 set search_path = app, public;

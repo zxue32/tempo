@@ -34,8 +34,9 @@ export default defineConfig({
       DATABASE_URL: DB,
       DIRECT_DATABASE_URL: DB,
       NEXT_PUBLIC_SITE_URL: `http://localhost:${PORT}`,
-      DEV_FAKE_AUTH: '1',
+      // real sign-up and sign-in (no development shortcut); the admin signs up with the setup code
       PLATFORM_ADMIN_EMAILS: 'admin@example.com',
+      ADMIN_SETUP_CODE: 'e2e-setup-code',
       CRON_SECRET: 'e2e-secret',
     },
   },

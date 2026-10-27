@@ -2,8 +2,8 @@
 export const env = {
   siteUrl: (process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/\/$/, ''),
   platformName: process.env.NEXT_PUBLIC_PLATFORM_NAME || 'Tempo',
-  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+  /** only used for photo storage, together with SUPABASE_SECRET_KEY (optional; photos go to the database otherwise) */
+  supabaseUrl: (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, ''),
 }
 
 export function platformAdminEmails(): string[] {

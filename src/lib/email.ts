@@ -9,6 +9,8 @@ type Mail = { to: string; subject: string; html: string; text: string; template:
 
 const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 
+export const emailConfigured = () => Boolean(process.env.RESEND_API_KEY)
+
 /** Sends through Resend when RESEND_API_KEY is set; otherwise logs and records "skipped". Never throws. */
 export async function sendMail(m: Mail): Promise<void> {
   const key = process.env.RESEND_API_KEY
@@ -228,11 +230,17 @@ export async function mailAdminsNewApplication(shop: Shop, ownerEmail: string) {
   }
 }
 
-export async function mailStaffInvite(shop: Shop, email: string, lang: Lang) {
+export async function mailStaffInvite(shop: Shop, email: string, lang: Lang, link: string) {
   const t = makeT(lang)
   const name = pick(lang, shop.name, shop.nameZh)
   const subject = t('em.staffInviteSubj', name)
-  const link = `${env.siteUrl}/signup?email=${encodeURIComponent(email)}&next=${encodeURIComponent('/dashboard')}`
   const html = layout({ accent: shop.accent || '#2E45D9', title: subject, lead: esc(t('em.staffInviteBody', name)), rows: [], button: { href: link, label: t('em.join') }, footer: esc(env.platformName) })
   await sendMail({ to: email, subject, html, text: plain([subject, link]), template: 'staff_invite', shopId: shop.id })
+}
+
+export async function mailPasswordReset(email: string, lang: Lang, link: string) {
+  const t = makeT(lang)
+  const subject = t('em.resetSubj', env.platformName)
+  const html = layout({ accent: '#2E45D9', title: subject, lead: esc(t('em.resetBody')), rows: [], button: { href: link, label: t('auth.updatePassword') }, footer: esc(env.platformName) })
+  await sendMail({ to: email, subject, html, text: plain([subject, t('em.resetBody'), link]), template: 'password_reset' })
 }

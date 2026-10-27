@@ -4,17 +4,12 @@ import { test, expect, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import postgres from 'postgres'
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { writeFileSync, mkdirSync } from 'node:fs'
 
 const DB = process.env.E2E_DATABASE_URL ?? 'postgres://tempo:tempo@localhost:5432/tempo'
 const slug = `depth-${Date.now().toString(36)}`
 const owner = `owner-${slug}@example.com`
 const shots = process.env.E2E_SHOTS ?? 'test-results/shots'
-const devUserId = (email: string) => {
-  const h = createHash('sha256').update('tempo-dev:' + email.toLowerCase()).digest('hex')
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`
-}
 // a tiny real PNG (the browser re-encodes it to JPEG before upload)
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC', 'base64')
 const a11yReport: Array<{ page: string; id: string; impact: string | null | undefined; nodes: number; help: string; targets: string[]; summary: string[] }> = []
@@ -34,13 +29,14 @@ function targetDate() {
 }
 
 test.beforeAll(() => {
-  execFileSync('node', ['scripts/seed-demo.mjs', slug, owner], { env: { ...process.env, DATABASE_URL: DB, OWNER_ID: devUserId(owner) } })
+  execFileSync('node', ['scripts/seed-demo.mjs', slug, owner], { env: { ...process.env, DATABASE_URL: DB, OWNER_PASSWORD: 'depth-password-1' } })
 })
 test.afterAll(async () => {
   mkdirSync('test-results', { recursive: true })
   writeFileSync('test-results/a11y.json', JSON.stringify(a11yReport, null, 2))
   const sql = postgres(DB, { max: 1 })
   await sql`delete from app.shops where slug = ${slug}`
+  await sql`delete from app.users where email in (${owner}, ${'luna-' + slug + '@example.com'})`
   await sql.end()
 })
 
@@ -56,8 +52,38 @@ test('gallery, rules, intake question, waitlist, confirmation and pilot evidence
   const o = await ownerCtx.newPage()
   await o.goto('/login')
   await o.locator('#email').fill(owner)
+  await o.locator('#password').fill('depth-password-1')
   await o.getByRole('button', { name: 'Sign in' }).click()
   await o.waitForURL(u => !u.pathname.startsWith('/login'))
+  await expect(o.getByText('Wrong email or password')).toHaveCount(0)
+
+  // ---------------------------------------------------------------- staff join link (no email needed)
+  await o.goto(`${base}/staff`)
+  await expect(async () => {
+    await o.locator('main .card').filter({ hasText: 'Luna' }).getByRole('button', { name: 'Edit' }).click()
+    await expect(o.getByRole('button', { name: 'Make join link' })).toBeVisible({ timeout: 2000 })
+  }).toPass({ timeout: 30_000 })
+  const luna = o.locator('main .card').filter({ has: o.locator('input[value="Luna"]') })
+  await luna.getByRole('button', { name: 'Make join link' }).click()
+  await expect(luna.locator('code').first()).toBeVisible()
+  const joinLink = (await luna.locator('code').first().innerText()).trim()
+  expect(joinLink).toMatch(/\/join\/[A-Za-z0-9_-]+$/)
+  const staffCtx = await browser.newContext()
+  await staffCtx.addCookies([{ name: 'lang', value: 'en', domain: 'localhost', path: '/' }])
+  const sp = await staffCtx.newPage()
+  await sp.goto(new URL(joinLink).pathname)
+  await sp.getByRole('link', { name: 'Create an account and join' }).click()
+  await sp.locator('#email').fill(`luna-${slug}@example.com`)
+  await sp.locator('#password').fill('luna-password-1')
+  await sp.getByRole('button', { name: 'Sign up' }).click()
+  await sp.getByRole('button', { name: 'Join', exact: true }).click()
+  await sp.waitForURL(/\/me$/)
+  await expect(sp.getByRole('heading', { name: 'My day' })).toBeVisible()
+  await expect(sp.getByText(/Luna/).first()).toBeVisible()
+  // the link is single-use
+  const sp2 = await (await browser.newContext()).newPage()
+  await sp2.goto(new URL(joinLink).pathname)
+  await expect(sp2.getByText(/already used or has expired/)).toBeVisible()
 
   await o.goto(`${base}/gallery`)
   await expect(async () => {
