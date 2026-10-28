@@ -33,7 +33,7 @@ export default async function CustomerPage(props: PageProps<'/dashboard/[shopId]
     [t('cu.cancels'), c.cancels],
     [t('cu.last'), c.lastVisit ? fmtDate(c.lastVisit, lang) : '—'],
     [t('cu.next'), c.nextVisit ? fmtDate(c.nextVisit, lang) : '—'],
-    ...(shop.showPrices ? [[t('cu.spent'), c.spentCents ? money(c.spentCents) : '—'] as [string, string]] : []),
+    ...(shop.showPrices ? [[t('cu.spent'), c.spentCents ? money(c.spentCents, shop.currency) : '—'] as [string, string]] : []),
   ]
   return (
     <div className="flex flex-col gap-5">
@@ -73,7 +73,7 @@ export default async function CustomerPage(props: PageProps<'/dashboard/[shopId]
                         </span>
                         {b.notes && <span className="block text-[12.5px] text-muted">“{b.notes}”</span>}
                       </span>
-                      <span className="flex flex-col items-end gap-1"><BookingStatusChip status={b.status} t={t} />{shop.showPrices && <span className="tnum text-[13px]">{money(b.estPriceCents)}</span>}</span>
+                      <span className="flex flex-col items-end gap-1"><BookingStatusChip status={b.status} t={t} />{shop.showPrices && <span className="tnum text-[13px]">{money(b.estPriceCents, shop.currency)}</span>}</span>
                     </Link>
                   </li>
                 )

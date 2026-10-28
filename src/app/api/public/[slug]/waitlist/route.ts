@@ -2,7 +2,9 @@ import { z } from 'zod'
 import { getShopBySlug } from '@/lib/data/shops'
 import { loadCatalog } from '@/lib/data/catalog'
 import { joinWaitlist } from '@/lib/data/waitlist'
-import { dateStr, minuteOfDay, uuid, emailRe, phoneDigits } from '@/lib/validate'
+import { dateStr, minuteOfDay, uuid, emailRe } from '@/lib/validate'
+import { parsePhone } from '@/lib/phone'
+import { marketOf } from '@/lib/markets'
 import { json, errorResponse } from '@/lib/api'
 import { allow, clientKey } from '@/lib/ratelimit'
 import { nowInZone, diffDays } from '@/lib/tz'
@@ -29,10 +31,10 @@ export async function POST(req: Request, ctx: RouteContext<'/api/public/[slug]/w
     const d = parsed.data
     if (d.website) return json({ error: 'invalid' }, 400)
     if (!emailRe.test(d.email)) return json({ error: 'invalid', detail: 'email' }, 400)
-    if (d.phone && phoneDigits(d.phone).length < 10) return json({ error: 'invalid', detail: 'phone' }, 400)
     if (!(d.toMin > d.fromMin)) return json({ error: 'invalid', detail: 'time' }, 400)
     const shop = await getShopBySlug(slug)
     if (!shop || shop.status !== 'live' || !shop.waitlistEnabled) return json({ error: 'not_open' }, 403)
+    if (d.phone && !parsePhone(d.phone, marketOf(shop).phoneRegion)) return json({ error: 'invalid', detail: 'phone' }, 400)
     if (!(await allow('wl:' + (await clientKey()), 10, 3600))) return json({ error: 'rate' }, 429)
     const today = nowInZone(shop.timezone).date
     if (diffDays(d.date, today) < 0 || diffDays(d.date, today) > shop.maxDays) return json({ error: 'invalid', detail: 'date' }, 400)

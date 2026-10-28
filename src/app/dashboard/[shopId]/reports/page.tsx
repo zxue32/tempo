@@ -67,7 +67,7 @@ export default async function ReportsPage(props: PageProps<'/dashboard/[shopId]/
             <Kpi label={t('rp.completed')} value={totals.completed} sub={totals.upcoming ? t('rp.upcoming', totals.upcoming) : undefined} />
             <Kpi label={t('rp.noShows')} value={totals.noShows} sub={t('rp.noShowRate', pct(noShowRate))} warn={!!totals.noShows} />
             <Kpi label={t('rp.cancelled')} value={totals.cancelled} />
-            <Kpi label={t('rp.revenue')} value={money(totals.revenueCents) || '$0'} sub={totals.upcomingCents ? t('rp.upcoming', money(totals.upcomingCents)) : undefined} />
+            <Kpi label={t('rp.revenue')} value={money(totals.revenueCents, shop.currency)} sub={totals.upcomingCents ? t('rp.upcoming', money(totals.upcomingCents, shop.currency)) : undefined} />
             <Kpi label={t('rp.utilization')} value={pct(r.utilization)} />
           </dl>
           <p className="text-[12.5px] text-muted">{t('rp.estNote')}</p>
@@ -88,9 +88,9 @@ export default async function ReportsPage(props: PageProps<'/dashboard/[shopId]/
                         <td className="whitespace-nowrap"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: s.color }} /><b>{pick(lang, s.name, s.nameZh)}</b></td>
                         <td className="r tnum">{s.completed}</td>
                         <td className="r tnum">{hours(s.serviceMin)}</td>
-                        <td className="r tnum">{money(s.revenueCents) || '$0'}</td>
+                        <td className="r tnum">{money(s.revenueCents, shop.currency)}</td>
                         <td className="r tnum">{s.commissionPct}%</td>
-                        <td className="r tnum font-semibold">{money(Math.round(s.revenueCents * s.commissionPct / 100)) || '$0'}</td>
+                        <td className="r tnum font-semibold">{money(Math.round(s.revenueCents * s.commissionPct / 100), shop.currency)}</td>
                         <td className={`r tnum ${s.noShows ? 'text-warn' : 'text-muted'}`}>{s.noShows}</td>
                         <td className="min-w-[150px]">
                           <div className="flex items-center gap-2">
@@ -106,9 +106,9 @@ export default async function ReportsPage(props: PageProps<'/dashboard/[shopId]/
                     <td>{t('c.total')}</td>
                     <td className="r tnum">{totals.completed}</td>
                     <td className="r tnum">{hours(r.staff.reduce((a, s) => a + s.serviceMin, 0))}</td>
-                    <td className="r tnum">{money(totals.revenueCents) || '$0'}</td>
+                    <td className="r tnum">{money(totals.revenueCents, shop.currency)}</td>
                     <td />
-                    <td className="r tnum">{money(totalComm) || '$0'}</td>
+                    <td className="r tnum">{money(totalComm, shop.currency)}</td>
                     <td className="r tnum">{totals.noShows}</td>
                     <td className="tnum">{pct(r.utilization)}</td>
                   </tr>

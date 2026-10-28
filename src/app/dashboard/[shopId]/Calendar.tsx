@@ -12,12 +12,13 @@ import { blocker, guestDuration, type EngineDay, type EngineStaff } from '@/lib/
 import { addDays, fmtDate, fmtTime, fmtTimeShort, fmtDuration } from '@/lib/tz'
 import { pick, type DictKey } from '@/lib/i18n'
 import type { Booking, Service, Shift, Skill, Staff, Industry, BookingStatus, Preferences } from '@/lib/types'
+import type { CurrencyCode } from '@/lib/markets'
 import {
   createBookingAction, bookingDetail, setBookingStatusAction, moveBookingAction, setItemsAction, markStartedAction,
   updateBookingDetailsAction, findCustomerByPhone,
 } from './actions'
 
-type ShopLite = { id: string; industry: Industry; slotMinutes: number; bufferMinutes: number; maxGuests: number; timezone: string }
+type ShopLite = { id: string; industry: Industry; currency: CurrencyCode; slotMinutes: number; bufferMinutes: number; maxGuests: number; timezone: string }
 type Props = {
   shop: ShopLite
   date: string
@@ -425,7 +426,7 @@ function AddPanel({ shop, date, day, range, staff, services, skills, initialStaf
         </>
       )}
       <div className="card flex flex-col gap-1 px-4 py-3 text-[14px]">
-        {duration > 0 && <span className="tnum">{fmtTime(start, lang)}–{fmtTime(start + duration, lang)} · {fmtDuration(duration, lang)}{est > 0 && kind !== 'block' ? ` · ${money(est)}` : ''}</span>}
+        {duration > 0 && <span className="tnum">{fmtTime(start, lang)}–{fmtTime(start + duration, lang)} · {fmtDuration(duration, lang)}{est > 0 && kind !== 'block' ? ` · ${money(est, shop.currency)}` : ''}</span>}
         <span className={why ? (needsForce ? 'font-semibold text-warn' : 'err') : 'font-semibold text-ok'}>{why ? t(`cal.why.${why}` as DictKey) : '✓ ' + t('cal.fits')}</span>
         {lacksSkill && <span className="font-semibold text-warn">{t('cal.why.skill')}</span>}
         {needsForce && <label className="chk mt-1 text-[13px]"><input type="checkbox" checked={force} onChange={e => setForce(e.target.checked)} />{t('cal.force')}</label>}
@@ -487,8 +488,8 @@ function DetailPanel({ shop, id, staff, services, range, onClose, onDone }: {
         <dt className="text-muted">{t(`staffWord.${shop.industry}`)}</dt><dd className="flex items-center gap-2">{st && <span className="nail" style={{ ['--c' as string]: st.color }} />}{st ? pick(lang, st.name, st.nameZh) : '—'}</dd>
         {!isBlock && <>
           <dt className="text-muted">{t('sv.main')}</dt>
-          <dd>{items.map(i => <div key={i.id ?? i.name} className="flex justify-between gap-2"><span>{i.kind === 'addon' ? '+ ' : ''}{pick(lang, i.name, i.nameZh)}</span><span className="tnum text-muted">{money(i.priceCents)}</span></div>)}</dd>
-          {est > 0 && <><dt className="text-muted">{t('cal.estPrice')}</dt><dd className="tnum font-semibold">{money(est)}</dd></>}
+          <dd>{items.map(i => <div key={i.id ?? i.name} className="flex justify-between gap-2"><span>{i.kind === 'addon' ? '+ ' : ''}{pick(lang, i.name, i.nameZh)}</span><span className="tnum text-muted">{money(i.priceCents, shop.currency)}</span></div>)}</dd>
+          {est > 0 && <><dt className="text-muted">{t('cal.estPrice')}</dt><dd className="tnum font-semibold">{money(est, shop.currency)}</dd></>}
           <dt className="text-muted">{t('c.phone')}</dt><dd className="tnum">{b.guestPhone ? <a href={`tel:${b.guestPhone}`} className="text-accent">{b.guestPhone}</a> : '—'}</dd>
           <dt className="text-muted">{t('c.email')}</dt><dd className="break-all">{b.guestEmail || '—'}</dd>
           {b.customerId && <><dt className="text-muted">{t('d.customers')}</dt><dd>{t('cal.visits', d.stats.visits, d.stats.noShows)}</dd></>}

@@ -6,6 +6,8 @@ import { useToast, errText } from '@/components/dash'
 import type { DictKey } from '@/lib/i18n'
 import type { Service } from '@/lib/types'
 import { saveServiceAction, deleteServiceAction, reorderServicesAction } from '../actions'
+import { fromMinor, toMinor } from '@/lib/money'
+import type { CurrencyCode } from '@/lib/markets'
 
 type Row = {
   id: string | null; kind: 'service' | 'addon'; category: string; appliesTo: string[]; name: string; nameZh: string; descEn: string; descZh: string
@@ -13,9 +15,9 @@ type Row = {
   resourceId: string; questionEn: string; questionZh: string
 }
 type Res = { id: string; name: string; nameZh: string | null; quantity: number }
-const toRow = (s: Service): Row => ({ id: s.id, kind: s.kind, category: s.category, appliesTo: s.appliesTo, name: s.name, nameZh: s.nameZh ?? '', descEn: s.descEn ?? '', descZh: s.descZh ?? '', durationMin: s.durationMin, price: s.priceCents == null ? '' : String(s.priceCents / 100), priceFrom: s.priceFrom, active: s.active, online: s.online, resourceId: s.resourceId ?? '', questionEn: s.questionEn ?? '', questionZh: s.questionZh ?? '' })
+const toRow = (s: Service, currency: CurrencyCode): Row => ({ id: s.id, kind: s.kind, category: s.category, appliesTo: s.appliesTo, name: s.name, nameZh: s.nameZh ?? '', descEn: s.descEn ?? '', descZh: s.descZh ?? '', durationMin: s.durationMin, price: s.priceCents == null ? '' : fromMinor(s.priceCents, currency), priceFrom: s.priceFrom, active: s.active, online: s.online, resourceId: s.resourceId ?? '', questionEn: s.questionEn ?? '', questionZh: s.questionZh ?? '' })
 
-export function ServicesEditor({ shopId, services, categories, resources }: { shopId: string; services: Service[]; categories: string[]; resources: Res[] }) {
+export function ServicesEditor({ shopId, services, categories, resources, currency }: { shopId: string; services: Service[]; categories: string[]; resources: Res[]; currency: CurrencyCode }) {
   const { t } = useI18n()
   const router = useRouter()
   const [adding, setAdding] = useState<null | 'service' | 'addon'>(null)
@@ -39,9 +41,9 @@ export function ServicesEditor({ shopId, services, categories, resources }: { sh
           <h2 className="font-display text-[20px] font-extrabold">{t('sv.main')}</h2>
           <button className="btn btn-sm btn-primary" onClick={() => setAdding('service')} disabled={adding !== null}>+ {t('sv.add')}</button>
         </div>
-        {adding === 'service' && <ServiceRow shopId={shopId} row={blank('service')} categories={mainCats} resources={resources} onDone={() => { setAdding(null); router.refresh() }} onCancel={() => setAdding(null)} />}
+        {adding === 'service' && <ServiceRow shopId={shopId} currency={currency} row={blank('service')} categories={mainCats} resources={resources} onDone={() => { setAdding(null); router.refresh() }} onCancel={() => setAdding(null)} />}
         {main.length === 0 && adding !== 'service' && <p className="text-muted">{t('sv.empty')}</p>}
-        {main.map((s, i) => <ServiceRow key={s.id} shopId={shopId} row={toRow(s)} categories={mainCats} resources={resources} onDone={() => router.refresh()} onMove={d => reorder(main, i, d)} first={i === 0} last={i === main.length - 1} />)}
+        {main.map((s, i) => <ServiceRow key={s.id} shopId={shopId} currency={currency} row={toRow(s, currency)} categories={mainCats} resources={resources} onDone={() => router.refresh()} onMove={d => reorder(main, i, d)} first={i === 0} last={i === main.length - 1} />)}
       </section>
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -51,15 +53,15 @@ export function ServicesEditor({ shopId, services, categories, resources }: { sh
           </div>
           <button className="btn btn-sm btn-primary" onClick={() => setAdding('addon')} disabled={adding !== null}>+ {t('sv.addAddon')}</button>
         </div>
-        {adding === 'addon' && <ServiceRow shopId={shopId} row={blank('addon')} categories={mainCats} resources={resources} onDone={() => { setAdding(null); router.refresh() }} onCancel={() => setAdding(null)} />}
-        {addons.map((s, i) => <ServiceRow key={s.id} shopId={shopId} row={toRow(s)} categories={mainCats} resources={resources} onDone={() => router.refresh()} onMove={d => reorder(addons, i, d)} first={i === 0} last={i === addons.length - 1} />)}
+        {adding === 'addon' && <ServiceRow shopId={shopId} currency={currency} row={blank('addon')} categories={mainCats} resources={resources} onDone={() => { setAdding(null); router.refresh() }} onCancel={() => setAdding(null)} />}
+        {addons.map((s, i) => <ServiceRow key={s.id} shopId={shopId} currency={currency} row={toRow(s, currency)} categories={mainCats} resources={resources} onDone={() => router.refresh()} onMove={d => reorder(addons, i, d)} first={i === 0} last={i === addons.length - 1} />)}
       </section>
     </div>
   )
 }
 
-function ServiceRow({ shopId, row, categories, resources, onDone, onCancel, onMove, first, last }: {
-  shopId: string; row: Row; categories: string[]; resources: Res[]; onDone: () => void; onCancel?: () => void; onMove?: (d: -1 | 1) => void; first?: boolean; last?: boolean
+function ServiceRow({ shopId, row, categories, resources, currency, onDone, onCancel, onMove, first, last }: {
+  shopId: string; row: Row; currency: CurrencyCode; categories: string[]; resources: Res[]; onDone: () => void; onCancel?: () => void; onMove?: (d: -1 | 1) => void; first?: boolean; last?: boolean
 }) {
   const { t, lang } = useI18n()
   const toast = useToast()
@@ -71,9 +73,10 @@ function ServiceRow({ shopId, row, categories, resources, onDone, onCancel, onMo
   const f = <K extends keyof Row>(k: K, val: Row[K]) => setV(x => ({ ...x, [k]: val }))
   const save = () => start(async () => {
     setErr(null)
-    const price = v.price.trim() === '' ? null : Math.round(parseFloat(v.price) * 100)
+    // minor units of the shop's currency: "12.5" dollars → 1250, "1200" yen → 1200; anything that would need rounding is refused
+    const price = v.price.trim() === '' ? null : toMinor(v.price, currency)
     if (!v.name.trim()) { setErr(t('sv.nameEn') + ' ✕'); return }
-    if (price != null && (!Number.isFinite(price) || price < 0)) { setErr(t('sv.price') + ' ✕'); return }
+    if (v.price.trim() !== '' && price == null) { setErr(t('sv.price') + ' ✕'); return }
     const r = await saveServiceAction(shopId, row.id, { kind: v.kind, category: v.kind === 'addon' ? 'addon' : v.category, appliesTo: v.kind === 'addon' ? v.appliesTo : [], name: v.name, nameZh: v.nameZh, descEn: v.descEn, descZh: v.descZh, durationMin: v.durationMin, priceCents: price, priceFrom: v.priceFrom, active: v.active, online: v.online, resourceId: v.resourceId || null, questionEn: v.questionEn, questionZh: v.questionZh })
     if (!r.ok) { setErr(errText(t, r.error, r.detail)); return }
     toast.show(t('c.saved'))

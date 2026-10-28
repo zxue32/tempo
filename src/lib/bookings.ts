@@ -5,15 +5,19 @@ import type { Shop, Booking, BookingItem, BookingKind, BookingStatus, Lang, Serv
 import { loadCatalog, type Catalog } from './data/catalog'
 import { buildDays } from './availability'
 import { findSlots, blocker, guestDuration, qualifies, guestResources, resourceConflict, type GuestRequest, type Assignment } from './engine'
-import { zonedToUtc, nowInZone, diffDays } from './tz'
+import { nowInZone, diffDays, resolveLocal } from './tz'
 import { unbookableReason } from './industries/registry'
+import { marketOf, marketOpen } from './markets'
+import { parsePhone, phoneKey, legacyPhoneKey } from './phone'
 
 export class BookingError extends Error {
   constructor(public code:
     | 'not_open' | 'invalid' | 'too_soon' | 'too_far' | 'taken' | 'limit' | 'blocked' | 'not_found'
     | 'cutoff' | 'not_allowed' | 'service_gone' | 'outside_shift' | 'closed' | 'busy'
     /** the service belongs to an industry this shop can't take bookings for (CORE-02) */
-    | 'capability_disabled',
+    | 'capability_disabled'
+    /** the shop's market isn't open for trading (CORE-03) */
+    | 'market_unsupported',
     public detail?: string) {
     super(code)
   }
@@ -22,9 +26,19 @@ export class BookingError extends Error {
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const makeCode = () => Array.from({ length: 6 }, () => CODE_CHARS[randomInt(CODE_CHARS.length)]).join('')
 const makeToken = () => randomBytes(18).toString('base64url')
-export const normPhone = (p: string | null | undefined) => {
-  const d = String(p || '').replace(/\D/g, '')
-  return d.length === 11 && d.startsWith('1') ? d.slice(1) : d
+/** Digits-only phone key used before CORE-03 (kept for partial-number search); matching uses `phoneKey`. */
+export const normPhone = legacyPhoneKey
+
+/**
+ * The instant a local start time means (CORE-03). A time the clocks skip is refused; a time the clocks repeat
+ * needs the caller to say which of the two it means.
+ */
+function startInstant(date: string, start: number, tz: string, fold?: 'earlier' | 'later'): Date {
+  const r = resolveLocal(date, start, tz)
+  if (r.kind === 'ok') return r.utc
+  if (r.kind === 'gap') throw new BookingError('invalid', 'dst_gap')
+  if (!fold) throw new BookingError('invalid', 'dst_ambiguous')
+  return fold === 'earlier' ? r.earlier : r.later
 }
 
 export type Contact = { name: string; phone: string | null; email: string | null }
@@ -47,6 +61,8 @@ export type CreateInput = {
   createdBy?: string | null
   /** shop staff may book outside the roster (never on top of another booking) */
   force?: boolean
+  /** which of the two times is meant on the night the clocks go back (CORE-03) */
+  fold?: 'earlier' | 'later'
   now?: Date
 }
 
@@ -110,15 +126,19 @@ async function uniqueCode(q: Tx, shopId: string): Promise<string> {
   throw new Error('could not allocate a booking code')
 }
 
-async function upsertCustomer(q: Tx, shopId: string, c: Contact): Promise<{ id: string; blocked: boolean } | null> {
-  const phone = normPhone(c.phone)
+async function upsertCustomer(q: Tx, shop: Shop, c: Contact): Promise<{ id: string; blocked: boolean } | null> {
+  const shopId = shop.id
+  // read the number in the shop's own region; its key is unchanged for US numbers, so returning customers still match
+  const parsed = parsePhone(c.phone, marketOf(shop).phoneRegion)
+  const phone = parsed?.key ?? normPhone(c.phone)
   if (!phone && !c.email) return null
   if (phone) {
     const [row] = await q<{ id: string; blocked: boolean }[]>`
-      insert into app.customers (shop_id, name, phone, phone_norm, email)
-      values (${shopId}, ${c.name}, ${c.phone}, ${phone}, ${c.email})
+      insert into app.customers (shop_id, name, phone, phone_norm, phone_e164, email)
+      values (${shopId}, ${c.name}, ${c.phone}, ${phone}, ${parsed?.e164 ?? null}, ${c.email})
       on conflict (shop_id, phone_norm) where phone_norm <> '' do update set
-        name = excluded.name, phone = excluded.phone, email = coalesce(excluded.email, app.customers.email)
+        name = excluded.name, phone = excluded.phone, phone_e164 = coalesce(excluded.phone_e164, app.customers.phone_e164),
+        email = coalesce(excluded.email, app.customers.email)
       returning id, blocked
     `
     return row
@@ -153,8 +173,10 @@ function windowCheck(shop: Shop, date: string, start: number, now?: Date) {
 
 export async function createBooking(input: CreateInput): Promise<CreateResult> {
   const { shop, mode } = input
+  if (!marketOpen(shop)) throw new BookingError('market_unsupported')
   if (mode === 'online' && shop.status !== 'live') throw new BookingError('not_open')
   if (!Number.isInteger(input.start) || input.start < 0 || input.start >= 1440) throw new BookingError('invalid', 'start')
+  const startsAt = startInstant(input.date, input.start, shop.timezone, input.fold)
   if (mode === 'online') windowCheck(shop, input.date, input.start, input.now)
   const catalog = await loadCatalog(shop.id, { forCustomers: mode === 'online' })
   if (input.kind !== 'block') validateGuests(catalog, input.guests, shop, mode)
@@ -184,7 +206,7 @@ export async function createBooking(input: CreateInput): Promise<CreateResult> {
 
         // abuse limits for customer bookings
         let customer: { id: string; blocked: boolean } | null = null
-        if (input.contact) customer = await upsertCustomer(tx, shop.id, input.contact)
+        if (input.contact) customer = await upsertCustomer(tx, shop, input.contact)
         if (mode === 'online') {
           if (customer?.blocked) throw new BookingError('blocked')
           if (customer) {
@@ -208,7 +230,6 @@ export async function createBooking(input: CreateInput): Promise<CreateResult> {
           const a = assign[i]
           const guest = input.guests[i]
           const items = input.kind === 'block' ? [] : itemsFor(catalog, guest, a.staffId)
-          const startsAt = zonedToUtc(input.date, input.start, shop.timezone)
           const endsAt = new Date(startsAt.getTime() + a.duration * 60000)
           const busyUntil = new Date(endsAt.getTime() + (input.kind === 'block' ? 0 : shop.bufferMinutes) * 60000)
           const est = items.reduce((t, it) => t + (it.priceCents ?? 0), 0)
@@ -313,12 +334,13 @@ export async function byToken(token: string): Promise<{ primary: Booking; group:
 }
 
 export async function lookupByCode(shopId: string, code: string, phone: string): Promise<string | null> {
-  const rows = await sql<{ manageToken: string | null; guestPhone: string | null }[]>`
-    select manage_token, guest_phone from app.bookings
-    where shop_id = ${shopId} and code = ${code.toUpperCase()} and manage_token is not null
+  const rows = await sql<{ manageToken: string | null; guestPhone: string | null; marketKey: string }[]>`
+    select b.manage_token, b.guest_phone, s.market_key from app.bookings b join app.shops s on s.id = b.shop_id
+    where b.shop_id = ${shopId} and b.code = ${code.toUpperCase()} and b.manage_token is not null
   `
-  const p = normPhone(phone)
-  const hit = rows.find(r => normPhone(r.guestPhone) === p && p.length >= 7)
+  const region = marketOf({ marketKey: rows[0]?.marketKey }).phoneRegion
+  const p = phoneKey(phone, region)
+  const hit = rows.find(r => phoneKey(r.guestPhone, region) === p && p.length >= 7)
   return hit?.manageToken ?? null
 }
 
@@ -377,7 +399,7 @@ async function moveGroup(shop: Shop, catalog: Catalog, active: Booking[], guests
         const visits = assign.map((a, i) => ({ start, end: start + a.duration + day.buffer, resourceIds: guestResources(day, guests[i]) }))
         if (!o.force && resourceConflict(day, visits, new Set(ignore))) throw new BookingError('taken', 'resource')
       } else throw new BookingError('taken')
-      const startsAt = zonedToUtc(date, start, shop.timezone)
+      const startsAt = startInstant(date, start, shop.timezone)
       for (let i = 0; i < active.length; i++) {
         const b = active[i], a = assign[i]
         const items = itemsFor(catalog, guests[i], a.staffId)
@@ -484,7 +506,7 @@ export async function shopMove(shop: Shop, bookingId: string, date: string, star
         if (!st) throw new BookingError('invalid', 'staff')
         const why = blocker({ ...day, buffer: 0 }, st, start, b.durationMin, new Set([b.id]), { ignoreShift: true })
         if (why) throw new BookingError('taken', why)
-        const startsAt = zonedToUtc(date, start, shop.timezone)
+        const startsAt = startInstant(date, start, shop.timezone)
         const endsAt = new Date(startsAt.getTime() + b.durationMin * 60000)
         await tx`update app.bookings set staff_id = ${staffId}, date = ${date}, start_min = ${start}, end_min = ${start + b.durationMin},
           starts_at = ${startsAt}, ends_at = ${endsAt}, busy_until = ${endsAt} where id = ${b.id}`

@@ -22,7 +22,7 @@ export default async function ServicesPage(props: PageProps<'/dashboard/[shopId]
         <p className="text-[14px] text-muted">{t('sv.hint')}</p>
         {resources.length === 0 && <p className="mt-1 text-[13px] text-muted">{t('sv.resourceTip')} <Link href={`/dashboard/${shopId}/rules`}>{t('sv.resourceTipLink')}</Link></p>}
       </div>
-      <ServicesEditor shopId={shopId} services={services} categories={cats} resources={resources.map(r => ({ id: r.id, name: r.name, nameZh: r.nameZh, quantity: r.quantity }))} />
+      <ServicesEditor shopId={shopId} currency={shop.currency} services={services} categories={cats} resources={resources.map(r => ({ id: r.id, name: r.name, nameZh: r.nameZh, quantity: r.quantity }))} />
     </div>
   )
 }

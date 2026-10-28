@@ -27,7 +27,7 @@ export default async function CalendarPage(props: PageProps<'/dashboard/[shopId]
   return (
     <Calendar
       key={date}
-      shop={{ id: shop.id, industry: shop.industry, slotMinutes: shop.slotMinutes, bufferMinutes: shop.bufferMinutes, maxGuests: shop.maxGuests, timezone: shop.timezone }}
+      shop={{ id: shop.id, industry: shop.industry, currency: shop.currency, slotMinutes: shop.slotMinutes, bufferMinutes: shop.bufferMinutes, maxGuests: shop.maxGuests, timezone: shop.timezone }}
       date={date}
       today={now.date}
       nowMin={now.min}

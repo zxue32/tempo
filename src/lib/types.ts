@@ -2,6 +2,7 @@ export type Lang = 'zh' | 'en'
 export type { Industry } from './templates'
 import type { Industry } from './templates'
 import type { IndustryKey } from './industries/registry'
+import type { MarketKey, CurrencyCode } from './markets'
 export type ShopStatus = 'draft' | 'pending' | 'changes' | 'live' | 'rejected' | 'suspended'
 export type DayHours = { closed: boolean; open: number; close: number }
 export type Hours = Record<string, DayHours>
@@ -15,6 +16,10 @@ export type Shop = {
   industry: Industry
   /** From `app.shop_industries`, primary first. Present on shop loads; read it through `shopIndustries()`. */
   industries?: IndustryKey[]
+  /** Where the shop trades (CORE-03). Read through `marketOf()` / `currencyOf()`. */
+  marketKey: MarketKey
+  /** Settlement currency; every price of the shop is in minor units of it. */
+  currency: CurrencyCode
   name: string
   nameZh: string | null
   aboutEn: string | null

@@ -81,7 +81,7 @@ export default async function BookingsPage(props: PageProps<'/dashboard/[shopId]
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[14px] text-muted">
         <span><b className="text-ink">{t('bl.count', rows.length)}</b> · {fmtDate(f.from, lang, rangeFmt)} – {fmtDate(f.to, lang, rangeFmt)}</span>
-        {shop.showPrices && total > 0 && <span>{t('cal.estPrice')}: <b className="tnum text-ink">{money(total)}</b></span>}
+        {shop.showPrices && total > 0 && <span>{t('cal.estPrice')}: <b className="tnum text-ink">{money(total, shop.currency)}</b></span>}
         {rows.length >= LIMIT && <span className="text-warn">{t('bl.limited', LIMIT)}</span>}
       </div>
 
@@ -106,7 +106,7 @@ export default async function BookingsPage(props: PageProps<'/dashboard/[shopId]
                       <td className="whitespace-nowrap"><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: st?.color ?? '#999' }} />{st ? pick(lang, st.name, st.nameZh) : '—'}{b.anyStaff && <span className="ml-1 text-[12px] text-muted">({t('c.all')})</span>}</td>
                       <td className="whitespace-nowrap text-[13px]">{t(`bk.${b.kind}`)}</td>
                       <td><BookingStatusChip status={b.status} t={t} /></td>
-                      <td className="r tnum">{money(b.estPriceCents)}</td>
+                      <td className="r tnum">{money(b.estPriceCents, shop.currency)}</td>
                     </tr>
                   )
                 })}
@@ -129,7 +129,7 @@ export default async function BookingsPage(props: PageProps<'/dashboard/[shopId]
                       <span className="block truncate text-[13px] text-muted">{(b.items ?? []).map(i => pick(lang, i.name, i.nameZh)).join(', ')}</span>
                       <span className="block text-[12.5px] text-muted">{st ? pick(lang, st.name, st.nameZh) : ''} · {t(`bk.${b.kind}`)}</span>
                     </span>
-                    <span className="flex flex-col items-end gap-1"><BookingStatusChip status={b.status} t={t} /><span className="tnum text-[13px]">{money(b.estPriceCents)}</span></span>
+                    <span className="flex flex-col items-end gap-1"><BookingStatusChip status={b.status} t={t} /><span className="tnum text-[13px]">{money(b.estPriceCents, shop.currency)}</span></span>
                   </Link>
                 </li>
               )

@@ -29,7 +29,7 @@ export default async function BookPage(props: { params: Promise<{ slug: string }
   const catalog = await loadCatalog(shop.id, { forCustomers: true })
   const staff = catalog.staff.filter(s => s.active && s.bookableOnline)
   const flowShop: FlowShop = {
-    slug: shop.slug, industry: shop.industry, industries: shopIndustries(shop), maxGuests: shop.maxGuests, allowAnyStaff: shop.allowAnyStaff, maxDays: shop.maxDays,
+    slug: shop.slug, industry: shop.industry, industries: shopIndustries(shop), currency: shop.currency, maxGuests: shop.maxGuests, allowAnyStaff: shop.allowAnyStaff, maxDays: shop.maxDays,
     leadMinutes: shop.leadMinutes, cutoffMinutes: shop.cancelCutoffMinutes, showPrices: shop.showPrices, live: shop.status === 'live',
     note: pick(lang, shop.bookingNoteEn, shop.bookingNoteZh) || null, phone: shop.phone, waitlist: shop.waitlistEnabled,
   }

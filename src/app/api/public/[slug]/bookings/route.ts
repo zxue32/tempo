@@ -2,7 +2,9 @@ import { z } from 'zod'
 import { getShopBySlug } from '@/lib/data/shops'
 import { createBooking, BookingError } from '@/lib/bookings'
 import { listStaff } from '@/lib/data/catalog'
-import { guestsSchema, dateStr, minuteOfDay, emailRe, phoneDigits, trimOrNull } from '@/lib/validate'
+import { guestsSchema, dateStr, minuteOfDay, emailRe, trimOrNull } from '@/lib/validate'
+import { parsePhone } from '@/lib/phone'
+import { marketOf } from '@/lib/markets'
 import { json, errorResponse } from '@/lib/api'
 import { allow, clientKey } from '@/lib/ratelimit'
 import { mailCustomer, mailShop } from '@/lib/email'
@@ -41,10 +43,11 @@ export async function POST(req: Request, ctx: RouteContext<'/api/public/[slug]/b
     if (!parsed.success) return json({ error: 'invalid', detail: parsed.error.issues[0]?.path.join('.') }, 400)
     const d = parsed.data
     if (d.website) return json({ error: 'invalid' }, 400)
-    if (phoneDigits(d.phone).length < 10) return json({ error: 'invalid', detail: 'phone' }, 400)
     if (!emailRe.test(d.email)) return json({ error: 'invalid', detail: 'email' }, 400)
     const shop = await getShopBySlug(slug)
     if (!shop) return json({ error: 'not_found' }, 404)
+    // a number without a country code is read in the shop's own region (CORE-03)
+    if (!parsePhone(d.phone, marketOf(shop).phoneRegion)) return json({ error: 'invalid', detail: 'phone' }, 400)
     const ip = await clientKey()
     if (!(await allow(`bk:${shop.id}:${ip}`, 8, 3600)) || !(await allow(`bk:${ip}`, 20, 3600))) return json({ error: 'rate' }, 429)
     let photoUrl = ownPhoto(d.photoUrl)

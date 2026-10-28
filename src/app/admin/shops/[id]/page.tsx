@@ -85,7 +85,7 @@ export default async function AdminShop(props: PageProps<'/admin/shops/[id]'>) {
             <div>
               <h2 className="mb-2 text-[17px] font-bold">{t('ad.menu')} <span className="text-muted">({services.length})</span></h2>
               <ul className="flex flex-col gap-1 text-[13.5px]">
-                {services.map(s => <li key={s.id} className="flex justify-between gap-2"><span className={s.active ? '' : 'text-muted line-through'}>{pick(lang, s.name, s.nameZh)}</span><span className="tnum text-muted">{fmtDuration(s.durationMin, lang)} · {money(s.priceCents)}</span></li>)}
+                {services.map(s => <li key={s.id} className="flex justify-between gap-2"><span className={s.active ? '' : 'text-muted line-through'}>{pick(lang, s.name, s.nameZh)}</span><span className="tnum text-muted">{fmtDuration(s.durationMin, lang)} · {money(s.priceCents, shop.currency)}</span></li>)}
               </ul>
             </div>
             <div>

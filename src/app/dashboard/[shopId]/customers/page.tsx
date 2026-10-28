@@ -61,7 +61,7 @@ export default async function CustomersPage(props: PageProps<'/dashboard/[shopId
                   <td className={`r tnum hidden md:table-cell ${c.noShows ? 'font-bold text-warn' : 'text-muted'}`}>{c.noShows}</td>
                   <td className="tnum hidden md:table-cell">{c.lastVisit ? fmtDate(c.lastVisit, lang) : '—'}</td>
                   <td className="tnum hidden lg:table-cell">{c.nextVisit ? fmtDate(c.nextVisit, lang) : '—'}</td>
-                  {shop.showPrices && <td className="r tnum hidden lg:table-cell">{c.spentCents ? money(c.spentCents) : '—'}</td>}
+                  {shop.showPrices && <td className="r tnum hidden lg:table-cell">{c.spentCents ? money(c.spentCents, shop.currency) : '—'}</td>}
                 </tr>
               ))}
             </tbody>

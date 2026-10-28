@@ -8,7 +8,9 @@ import { sql } from '@/lib/db'
 import { getShop, submitShop, updateShop, readiness, type ShopPatch } from '@/lib/data/shops'
 import { createStaff, updateStaff, deleteStaff, setStaffSkills, reorderStaff, createService, updateService, deleteService, reorderServices, listStaff } from '@/lib/data/catalog'
 import { saveShifts, upsertSpecialDay, deleteSpecialDay } from '@/lib/data/schedule'
-import { createBooking, shopMove, shopSetStatus, shopSetItems, shopUpdateDetails, shopMarkStarted, getBooking, bookingEvents, BookingError, normPhone } from '@/lib/bookings'
+import { createBooking, shopMove, shopSetStatus, shopSetItems, shopUpdateDetails, shopMarkStarted, getBooking, bookingEvents, BookingError } from '@/lib/bookings'
+import { parsePhone, phoneKey } from '@/lib/phone'
+import { marketOf } from '@/lib/markets'
 import { saveResource, deleteResource, addGalleryItem, updateGalleryItem, deleteGalleryItem, reorderGallery, listPalette, saveSwatch, deleteSwatch, reorderPalette } from '@/lib/data/rules'
 import { integrityCheck } from '@/lib/data/pilot'
 import { savePreferences } from '@/lib/data/insights'
@@ -33,7 +35,13 @@ function bookingFail(e: unknown) {
   return fail('server')
 }
 
+/** Phone numbers typed in the dashboard are read in the shop's own region (CORE-03). */
+async function phoneRegionOf(shopId: string) {
+  return marketOf((await getShop(shopId)) ?? {}).phoneRegion
+}
+
 // ---------------------------------------------------------------- review
+
 
 export async function submitForReview(shopId: string): Promise<Result<{ status: string; issues: string[] }>> {
   const { user } = await requireShop(shopId, 'owner')
@@ -164,7 +172,7 @@ export async function updateBookingDetailsAction(shopId: string, bookingId: stri
 
 export async function findCustomerByPhone(shopId: string, phone: string) {
   await requireShop(shopId, 'manager')
-  const p = normPhone(phone)
+  const p = phoneKey(phone, await phoneRegionOf(shopId))
   if (p.length < 7) return null
   const [c] = await sql<{ id: string; name: string; email: string | null; visits: number; preferences: Preferences | null }[]>`
     select c.id, c.name, c.email, c.preferences, (select count(*)::int from app.bookings b where b.customer_id = c.id and b.status = 'completed') as visits
@@ -424,9 +432,11 @@ export async function saveCustomerAction(shopId: string, id: string, d: { name: 
   const p = z.object({ name: z.string().trim().min(1).max(80), phone: z.string().trim().max(30), email: z.string().trim().max(120), notes: z.string().max(2000), blocked: z.boolean() }).safeParse(d)
   if (!p.success) return fail('invalid')
   const email = p.data.email && emailRe.test(p.data.email) ? p.data.email.toLowerCase() : null
+  const region = await phoneRegionOf(shopId)
   try {
     await sql`
-      update app.customers set name = ${p.data.name}, phone = ${p.data.phone || null}, phone_norm = ${normPhone(p.data.phone)},
+      update app.customers set name = ${p.data.name}, phone = ${p.data.phone || null}, phone_norm = ${phoneKey(p.data.phone, region)},
+        phone_e164 = ${parsePhone(p.data.phone, region)?.e164 ?? null},
         email = ${email}, notes = ${p.data.notes || null}, blocked = ${p.data.blocked}
       where id = ${id} and shop_id = ${shopId}
     `

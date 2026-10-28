@@ -85,7 +85,7 @@ export default async function ManagePage(props: { params: Promise<{ token: strin
                   <b className="block">{staffName(b.staffId)}{show.length > 1 && b.guestName ? <span className="font-normal s-muted"> · {b.guestName}</span> : null}</b>
                   <span className="block text-[13.5px] s-muted">{(b.items ?? []).map(i => pick(lang, i.name, i.nameZh)).join(' + ')} · {fmtDuration(b.durationMin, lang)}</span>
                 </div>
-                {shop.showPrices && b.estPriceCents ? <span className="tnum text-[14px]">{money(b.estPriceCents)}</span> : null}
+                {shop.showPrices && b.estPriceCents ? <span className="tnum text-[14px]">{money(b.estPriceCents, shop.currency)}</span> : null}
               </div>
             ))}
             <div className="flex items-center justify-between gap-3 border-t border-dashed p-4 s-line">

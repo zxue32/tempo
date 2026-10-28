@@ -2,6 +2,8 @@
 import Link from 'next/link'
 import { shopHasHairTools, shopHasNailTools } from '@/lib/industries/shop'
 import type { IndustryKey } from '@/lib/industries/registry'
+import type { CurrencyCode } from '@/lib/markets'
+import { formatMoney } from '@/lib/money'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useI18n } from '@/components/i18n'
@@ -16,7 +18,7 @@ import { designToPng, type SwatchOption } from '@/components/NailDesigner'
 import { readHandoff, clearHandoff, noteFromSummary } from '@/lib/lune'
 
 export type FlowShop = {
-  slug: string; industry: Industry; industries: IndustryKey[]; maxGuests: number; allowAnyStaff: boolean; maxDays: number; leadMinutes: number
+  slug: string; industry: Industry; industries: IndustryKey[]; currency: CurrencyCode; maxGuests: number; allowAnyStaff: boolean; maxDays: number; leadMinutes: number
   cutoffMinutes: number; showPrices: boolean; live: boolean; note: string | null; phone: string | null; waitlist: boolean
 }
 export type FlowInitial = { services: string[]; addons: string[]; staff: string | null; date: string | null; look: { id: string; url: string } | null; design: NailDesign | null; hairColor: { id: string; label: string; hex: string } | null }
@@ -26,7 +28,7 @@ type Guest = { serviceIds: string[]; addonIds: string[]; staffId: string | null;
 type DaySum = { date: string; closed: boolean; count: number }
 type SlotRes = { start: number; staff: string[]; minutes: number[] }
 
-const money = (c: number) => '$' + (c % 100 === 0 ? (c / 100).toLocaleString('en-US') : (c / 100).toFixed(2))
+const money = (minor: number, currency: CurrencyCode) => formatMoney(minor, currency)
 const WINDOW = 14
 
 const hasQuestion = (s: Svc) => !!(s.questionEn || s.questionZh)
@@ -267,11 +269,12 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
       const code = data.error as string
       if (code === 'taken') { setNotice(t('bf.slotGone')); setSlot(null); goStep(2); load(windowStart, date); return }
       const msg: Record<string, string> = {
-        limit: t('bf.err.limit'), blocked: t('bf.err.blocked'), not_open: t('bf.err.not_open'), service_gone: t('bf.err.service_gone'), capability_disabled: t('bf.err.capability_disabled'),
+        limit: t('bf.err.limit'), blocked: t('bf.err.blocked'), not_open: t('bf.err.not_open'), service_gone: t('bf.err.service_gone'), capability_disabled: t('bf.err.capability_disabled'), market_unsupported: t('bf.err.market_unsupported'),
+        dst_gap: t('bf.err.dst_gap'), dst_ambiguous: t('bf.err.dst_ambiguous'),
         blocked_noshow: t('bf.err.noshow', shop.phone || ''),
         rate: t('bf.err.rate'), too_soon: t('bf.err.too_soon', fmtDuration(shop.leadMinutes, lang)), too_far: t('bf.err.too_far', shop.maxDays),
       }
-      setErr(msg[code === 'blocked' && data.detail === 'noshow' ? 'blocked_noshow' : code] || (data.detail === 'phone' ? t('bf.err.phone') : data.detail === 'email' ? t('bf.err.email') : t('bf.err.invalid')))
+      setErr(msg[code === 'blocked' && data.detail === 'noshow' ? 'blocked_noshow' : code === 'invalid' && /^dst_/.test(data.detail ?? '') ? data.detail : code] || (data.detail === 'phone' ? t('bf.err.phone') : data.detail === 'email' ? t('bf.err.email') : t('bf.err.invalid')))
     } catch {
       setErr(t('c.error'))
     } finally {
@@ -298,7 +301,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
           {guests.length > 1 && <span className="text-[11.5px] font-bold uppercase tracking-[.12em] s-muted">{t('bf.guest', i + 1)}</span>}
           {gs.serviceIds.length === 0 ? <span className="s-muted">{t('bf.nothing')}</span> : [...gs.serviceIds, ...gs.addonIds].map(id => {
             const s = byId.get(id)!
-            return <div key={id} className="flex justify-between gap-3"><span>{s.kind === 'addon' ? '+ ' : ''}{pick(lang, s.name, s.nameZh)}</span>{shop.showPrices && s.priceCents != null && <span className="tnum">{money(s.priceCents)}</span>}</div>
+            return <div key={id} className="flex justify-between gap-3"><span>{s.kind === 'addon' ? '+ ' : ''}{pick(lang, s.name, s.nameZh)}</span>{shop.showPrices && s.priceCents != null && <span className="tnum">{money(s.priceCents, shop.currency)}</span>}</div>
           })}
           {gs.serviceIds.length > 0 && (
             <div className="flex justify-between gap-3 text-[13px] s-muted">
@@ -330,7 +333,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
       )}
       {shop.showPrices && total > 0 && (
         <div className="flex justify-between gap-3 border-t pt-2 s-line">
-          <span>{t('bf.estTotal')}</span><b className="tnum">{anyFrom ? t('c.priceFrom', money(total)) : money(total)}</b>
+          <span>{t('bf.estTotal')}</span><b className="tnum">{anyFrom ? t('c.priceFrom', money(total, shop.currency)) : money(total, shop.currency)}</b>
         </div>
       )}
       <span className="text-[12.5px] s-muted">{t('bf.payInStore')}</span>
@@ -390,7 +393,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                           <b className="block">{pick(lang, s.name, s.nameZh)}</b>
                           <span className="block text-[13px] s-muted">{fmtDuration(s.durationMin, lang)}{pick(lang, s.descEn, s.descZh) ? ' · ' + pick(lang, s.descEn, s.descZh) : ''}</span>
                         </span>
-                        {shop.showPrices && s.priceCents != null && <b className="tnum">{s.priceFrom ? t('c.priceFrom', money(s.priceCents)) : money(s.priceCents)}</b>}
+                        {shop.showPrices && s.priceCents != null && <b className="tnum">{s.priceFrom ? t('c.priceFrom', money(s.priceCents, shop.currency)) : money(s.priceCents, shop.currency)}</b>}
                       </button>
                     )
                   })}
@@ -405,7 +408,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                       <div key={q.id} className="s-card flex flex-wrap items-center gap-3 p-3" role="group" aria-label={pick(lang, q.questionEn, q.questionZh)}>
                         <span className="min-w-0 flex-1">
                           <b className="block text-[14.5px]">{pick(lang, q.questionEn, q.questionZh)}</b>
-                          <span className="text-[12.5px] s-muted">{t('bf.questionYes', pick(lang, q.name, q.nameZh), fmtDuration(q.durationMin, lang))}{shop.showPrices && q.priceCents ? ` · +${money(q.priceCents)}` : ''}</span>
+                          <span className="text-[12.5px] s-muted">{t('bf.questionYes', pick(lang, q.name, q.nameZh), fmtDuration(q.durationMin, lang))}{shop.showPrices && q.priceCents ? ` · +${money(q.priceCents, shop.currency)}` : ''}</span>
                         </span>
                         <span className="flex gap-2">
                           <button type="button" className="s-pill !px-4" aria-pressed={a === true} onClick={() => answer(q.id, true)}>{t('c.yes')}</button>
@@ -432,7 +435,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                           <button key={s.id} type="button" className="s-opt !py-2.5" aria-pressed={guest.addonIds.includes(s.id)} onClick={() => toggleService(s.id)}>
                             <span className="s-tick">✓</span>
                             <span className="min-w-0 flex-1"><b className="block text-[14px]">{pick(lang, s.name, s.nameZh)}</b><span className="text-[12.5px] s-muted">+{fmtDuration(s.durationMin, lang)}</span></span>
-                            {shop.showPrices && s.priceCents != null && <b className="tnum text-[14px]">+{money(s.priceCents)}</b>}
+                            {shop.showPrices && s.priceCents != null && <b className="tnum text-[14px]">+{money(s.priceCents, shop.currency)}</b>}
                           </button>
                         ))}
                       </div>
@@ -643,7 +646,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
           <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3">
             <div className="min-w-0 flex-1 text-[14px]">
               {step === 2 && slot && date ? <b className="tnum block truncate">{fmtDate(date, lang)} · {fmtTime(slot.start, lang)}</b>
-                : <b className="tnum block">{shop.showPrices && total > 0 ? (anyFrom ? t('c.priceFrom', money(total)) : money(total)) : ''}</b>}
+                : <b className="tnum block">{shop.showPrices && total > 0 ? (anyFrom ? t('c.priceFrom', money(total, shop.currency)) : money(total, shop.currency)) : ''}</b>}
               <span className="block truncate s-muted">
                 {step === 2 && slot ? guests.map((_, i) => staffName(slot.staff[i])).join(', ') : ready1 ? fmtDuration(Math.max(...guests.map(gs => durationFor(gs, gs.staffId))), lang) : guests.some(gs => gs.serviceIds.length > 0) ? t('bf.answerFirst') : t('bf.nothing')}
               </span>

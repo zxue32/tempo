@@ -1,6 +1,8 @@
 import type { ShopStatus, BookingStatus } from '@/lib/types'
 import type { T } from '@/lib/i18n'
 import { env } from '@/lib/env'
+import { formatMoney } from '@/lib/money'
+import type { CurrencyCode } from '@/lib/markets'
 
 export function PlatformMark({ size = 26, withName = true }: { size?: number; withName?: boolean }) {
   return (
@@ -25,11 +27,10 @@ export function BookingStatusChip({ status, t }: { status: BookingStatus; t: T }
   return <span className={`chip ${cls}`}>{t(`bs.${status}`)}</span>
 }
 
-export function money(cents: number | null | undefined, from = false): string {
-  if (cents == null) return ''
-  const v = cents / 100
-  const s = '$' + (Number.isInteger(v) ? v.toLocaleString('en-US') : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
-  return from ? s + '+' : s
+/** A price stored in minor units of the shop's currency (CORE-03). Same text in every interface language. */
+export function money(minor: number | null | undefined, currency: CurrencyCode = 'USD'): string {
+  if (minor == null) return ''
+  return formatMoney(minor, currency)
 }
 
 export function Field({ label, hint, htmlFor, children, className = '' }: { label: string; hint?: string; htmlFor?: string; children: React.ReactNode; className?: string }) {
