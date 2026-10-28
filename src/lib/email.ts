@@ -95,7 +95,7 @@ function cutoffText(shop: Shop, b: Booking, lang: Lang) {
   return makeT(lang)('em.cutoff', s)
 }
 
-export type CustomerMailKind = 'confirmed' | 'rescheduled' | 'cancelled' | 'cancelled_by_shop' | 'reminder'
+export type CustomerMailKind = 'confirmed' | 'requested' | 'rescheduled' | 'cancelled' | 'cancelled_by_shop' | 'reminder'
 
 export async function mailCustomer(kind: CustomerMailKind, shop: Shop, group: Booking[], staff: StaffLite[], reason?: string | null) {
   const first = group[0]
@@ -109,6 +109,7 @@ export async function mailCustomer(kind: CustomerMailKind, shop: Shop, group: Bo
   const accent = shop.accent || '#A3223D'
   const subj = {
     confirmed: t('em.confirmedSubj', dateShort, time),
+    requested: t('em.requestedSubj', dateShort, time),
     rescheduled: t('em.rescheduledSubj', dateShort, time),
     cancelled: t('em.cancelledSubj', dateShort, time),
     cancelled_by_shop: t('em.cancelledSubj', dateShort, time),
@@ -116,6 +117,7 @@ export async function mailCustomer(kind: CustomerMailKind, shop: Shop, group: Bo
   }[kind]
   const lead = {
     confirmed: t('em.confirmedLead', esc(shopName)),
+    requested: t('em.requestedLead', esc(shopName)),
     rescheduled: t('em.rescheduledLead', esc(shopName)),
     cancelled: t('em.cancelledLead', esc(shopName)),
     cancelled_by_shop: t('em.cancelledByShopLead', esc(shopName)),

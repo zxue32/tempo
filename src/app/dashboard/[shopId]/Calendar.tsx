@@ -15,7 +15,7 @@ import type { Booking, Service, Shift, Skill, Staff, Industry, BookingStatus, Pr
 import type { CurrencyCode } from '@/lib/markets'
 import {
   createBookingAction, bookingDetail, setBookingStatusAction, moveBookingAction, setItemsAction, markStartedAction,
-  updateBookingDetailsAction, findCustomerByPhone,
+  updateBookingDetailsAction, findCustomerByPhone, reviewIntakeAction,
 } from './actions'
 
 type ShopLite = { id: string; industry: Industry; currency: CurrencyCode; slotMinutes: number; bufferMinutes: number; maxGuests: number; timezone: string }
@@ -263,7 +263,7 @@ function Event({ b, color, top, height, onOpen, now, drag, onDragStart }: {
     <button type="button" data-ev onClick={onOpen} onPointerDown={onDragStart}
       className={`absolute inset-x-1 z-[1] overflow-hidden rounded-lg px-2 py-1 text-left text-[12px] leading-tight hover:shadow-md ${b.status === 'confirmed' ? 'cursor-grab active:cursor-grabbing' : ''} ${drag ? 'z-[4] shadow-xl' : ''}`}
       style={{ top: top + 1, height: height - 2, ...style, ...(drag ? { transform: `translateY(${drag.dy}px)`, opacity: 0.9, outline: `2px solid ${drag.ok ? '#2E9F64' : '#C2362B'}` } : {}) }}>
-      <span className="tnum block text-[11px] opacity-80">{drag ? `${fmtTime(drag.start, lang)}–${fmtTime(drag.start + (b.endMin - b.startMin), lang)}` : `${fmtTime(b.startMin, lang)}–${fmtTime(b.endMin, lang)}`}{b.status === 'completed' ? ' ✓' : b.actualStart ? ' ▶' : ''}{b.status === 'confirmed' && b.clientConfirmedAt ? ' ☑' : ''}</span>
+      <span className="tnum block text-[11px] opacity-80">{drag ? `${fmtTime(drag.start, lang)}–${fmtTime(drag.start + (b.endMin - b.startMin), lang)}` : `${fmtTime(b.startMin, lang)}–${fmtTime(b.endMin, lang)}`}{b.status === 'completed' ? ' ✓' : b.actualStart ? ' ▶' : ''}{b.status === 'confirmed' && b.clientConfirmedAt ? ' ☑' : ''}{b.status === 'confirmed' && b.reviewPending ? ` · ${t('rv.needs')}` : ''}</span>
       <b className="block truncate">{b.kind === 'block' ? (b.notes || t('bk.block')) : b.guestName || t(`bk.${b.kind}`)}</b>
       {b.kind !== 'block' && <span className="block truncate opacity-85">{items}</span>}
     </button>
@@ -450,7 +450,8 @@ function DetailPanel({ shop, id, staff, services, range, onClose, onDone }: {
   const { t, lang } = useI18n()
   const router = useRouter()
   const [d, setD] = useState<Detail | null | 'missing'>(null)
-  const [mode, setMode] = useState<'view' | 'move' | 'items' | 'cancel' | 'edit'>('view')
+  const [mode, setMode] = useState<'view' | 'move' | 'items' | 'cancel' | 'edit' | 'decline'>('view')
+  const [declineWhy, setDeclineWhy] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [pending, startT] = useTransition()
   const load = () => bookingDetail(shop.id, id).then(r => setD(r ?? 'missing'))
@@ -470,11 +471,13 @@ function DetailPanel({ shop, id, staff, services, range, onClose, onDone }: {
   const isBlock = b.kind === 'block'
   const items = b.items ?? []
   const est = items.reduce((s, i) => s + (i.priceCents ?? 0), 0)
+  const reviewing = b.status === 'confirmed' && d.intake?.reviewState === 'pending'
 
   return (
     <Panel title={isBlock ? (b.notes || t('bk.block')) : b.guestName || t(`bk.${b.kind}`)} eyebrow={fmtDate(b.date, lang, { weekday: 'long', month: 'long', day: 'numeric' })} onClose={onClose}>
       <div className="flex flex-wrap gap-1.5">
-        <BookingStatusChip status={b.status} t={t} />
+        {/* waiting for the shop to check the answers is not "confirmed" (CORE-05) */}
+        {reviewing ? <span className="chip chip-warn" data-review="pending">{t('rv.needs')}</span> : <BookingStatusChip status={b.status} t={t} />}
         <span className="chip">{t(`bk.${b.kind}`)}</span>
         {d.groupSize > 1 && <span className="chip">{t('cal.groupOf', d.groupSize)}</span>}
         {b.anyStaff && <span className="chip">{t('cal.anyStaff')}</span>}
@@ -517,6 +520,30 @@ function DetailPanel({ shop, id, staff, services, range, onClose, onDone }: {
           <div className="flex flex-wrap items-center gap-3"><NailArt design={b.design} size={160} uid="cd" /><span className="text-[13px] text-muted">{describeDesign(b.design, t as (k: string) => string)}</span></div>
         </div>
       )}
+      {d.intake && d.intake.rows.length > 0 && (
+        <div data-intake className="flex flex-col gap-1.5 rounded-xl border border-line p-3">
+          <span className="lbl !mb-0">{t('rv.title')}{d.intake.reviewState === 'approved' ? ` · ${t('rv.approved')}` : d.intake.reviewState === 'declined' ? ` · ${t('rv.declined')}` : ''}</span>
+          <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13.5px]">
+            {d.intake.rows.map(r => (
+              <div key={r.key} className="contents">
+                <dt className="text-muted">{r.label[lang]}{r.sensitive && <span className="chip ml-1 !h-5 !text-[11px]">{t('rv.private')}</span>}</dt>
+                <dd>
+                  {r.text ? r.text[lang] : (
+                    <span className="flex flex-wrap gap-2">
+                      {r.photos.map(u => (
+                        <a key={u} href={u} target="_blank" rel="noreferrer">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={u} alt="" className="h-16 w-16 rounded-lg border border-line object-cover" />
+                        </a>
+                      ))}
+                    </span>
+                  )}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
       {b.photoUrl && (
         <a href={b.photoUrl} target="_blank" rel="noreferrer" className="block">
           <span className="lbl">{t('cal.refPhoto')}</span>
@@ -525,6 +552,22 @@ function DetailPanel({ shop, id, staff, services, range, onClose, onDone }: {
         </a>
       )}
 
+      {mode === 'view' && reviewing && (
+        <div className="flex flex-wrap gap-2">
+          <button className="btn btn-sm btn-primary" disabled={pending} onClick={() => run(() => reviewIntakeAction(shop.id, b.id, 'approve'))}>{t('rv.approve')}</button>
+          <button className="btn btn-sm btn-danger" onClick={() => setMode('decline')}>{t('rv.decline')}</button>
+        </div>
+      )}
+      {mode === 'decline' && (
+        <div className="flex flex-col gap-2">
+          <label className="lbl !mb-0" htmlFor="rv-why">{t('rv.declineReason')}</label>
+          <textarea id="rv-why" className="inp min-h-[72px]" maxLength={500} value={declineWhy} onChange={e => setDeclineWhy(e.target.value)} />
+          <div className="flex gap-2">
+            <button className="btn btn-sm btn-danger" disabled={pending || !declineWhy.trim()} onClick={() => run(() => reviewIntakeAction(shop.id, b.id, 'decline', declineWhy))}>{t('rv.decline')}</button>
+            <button className="btn btn-sm" onClick={() => setMode('view')}>{t('c.cancel')}</button>
+          </div>
+        </div>
+      )}
       {mode === 'view' && (
         <div className="flex flex-wrap gap-2">
           {b.status === 'confirmed' && !isBlock && !b.actualStart && <button className="btn btn-sm btn-dark" disabled={pending} onClick={() => run(() => markStartedAction(shop.id, b.id), undefined, true)}>▶ {t('cal.start')}</button>}

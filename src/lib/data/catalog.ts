@@ -14,10 +14,11 @@ export async function listStaff(shopId: string, opts: { activeOnly?: boolean } =
 
 export async function listServices(shopId: string, opts: { activeOnly?: boolean; onlineOnly?: boolean } = {}): Promise<Service[]> {
   return sql<Service[]>`
-    select * from app.services where shop_id = ${shopId}
-      ${opts.activeOnly ? sql`and active` : sql``}
-      ${opts.onlineOnly ? sql`and online` : sql``}
-    order by kind desc, sort, created_at
+    select s.*, (select v.id from app.service_versions v where v.service_id = s.id and v.version = s.current_version) as version_id
+    from app.services s where s.shop_id = ${shopId}
+      ${opts.activeOnly ? sql`and s.active` : sql``}
+      ${opts.onlineOnly ? sql`and s.online` : sql``}
+    order by s.kind desc, s.sort, s.created_at
   `
 }
 

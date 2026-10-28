@@ -9,6 +9,9 @@ import { nowInZone, diffDays, resolveLocal } from './tz'
 import { unbookableReason } from './industries/registry'
 import { marketOf, marketOpen } from './markets'
 import { parsePhone, phoneKey, legacyPhoneKey } from './phone'
+import { checkAnswers, FormError, type Answers } from './forms'
+import { activeForms } from './data/forms'
+import { refPhotoFor } from './media'
 
 export class BookingError extends Error {
   constructor(public code:
@@ -17,7 +20,9 @@ export class BookingError extends Error {
     /** the service belongs to an industry this shop can't take bookings for (CORE-02) */
     | 'capability_disabled'
     /** the shop's market isn't open for trading (CORE-03) */
-    | 'market_unsupported',
+    | 'market_unsupported'
+    /** the intake answers were missing, out of date or not acceptable; `detail` says which (CORE-05) */
+    | 'intake',
     public detail?: string) {
     super(code)
   }
@@ -63,10 +68,13 @@ export type CreateInput = {
   force?: boolean
   /** which of the two times is meant on the night the clocks go back (CORE-03) */
   fold?: 'earlier' | 'later'
+  /** each guest's answers to the shop's intake form, in guest order (CORE-05) */
+  intake?: Array<{ formId: string; answers: unknown } | null | undefined>
   now?: Date
 }
 
-export type CreateResult = { code: string; token: string | null; bookings: Booking[] }
+/** `review`: some answers wait for the shop to look at them, so the booking is a request, not yet confirmed (CORE-05). */
+export type CreateResult = { code: string; token: string | null; bookings: Booking[]; review: boolean }
 
 function itemsFor(catalog: Catalog, guest: GuestRequest, staffId: string): BookingItem[] {
   const byId = new Map(catalog.services.map(s => [s.id, s]))
@@ -75,11 +83,11 @@ function itemsFor(catalog: Catalog, guest: GuestRequest, staffId: string): Booki
   for (const id of guest.serviceIds) {
     const s = byId.get(id)!
     const own = catalog.skills.find(k => k.staffId === staffId && k.serviceId === id)?.durationMin
-    out.push({ serviceId: s.id, kind: 'service', name: s.name, nameZh: s.nameZh, durationMin: own ?? s.durationMin, priceCents: s.priceCents, sort: sort++ })
+    out.push({ serviceId: s.id, kind: 'service', name: s.name, nameZh: s.nameZh, durationMin: own ?? s.durationMin, priceCents: s.priceCents, sort: sort++, serviceVersionId: s.versionId ?? null })
   }
   for (const id of guest.addonIds) {
     const s = byId.get(id)!
-    out.push({ serviceId: s.id, kind: 'addon', name: s.name, nameZh: s.nameZh, durationMin: s.durationMin, priceCents: s.priceCents, sort: sort++ })
+    out.push({ serviceId: s.id, kind: 'addon', name: s.name, nameZh: s.nameZh, durationMin: s.durationMin, priceCents: s.priceCents, sort: sort++, serviceVersionId: s.versionId ?? null })
   }
   return out
 }
@@ -115,6 +123,37 @@ function validateGuests(catalog: Catalog, guests: GuestRequest[], shop: Shop, mo
   }
   const picked = guests.map(g => g.staffId).filter(Boolean)
   if (new Set(picked).size !== picked.length) throw new BookingError('invalid', 'same_staff')
+}
+
+/**
+ * Each guest's answers to the shop's intake form for the industry of what they booked (CORE-05). Customers booking
+ * online must answer an active form; shop staff booking for someone may leave it empty. Answers are checked
+ * against the form version they were given, on the server.
+ */
+async function checkIntake(shop: Shop, catalog: Catalog, input: CreateInput): Promise<Array<{ formId: string; answers: Answers; requiresReview: boolean } | null>> {
+  const forms = await activeForms(shop.id)
+  return input.guests.map((g, i) => {
+    const given = input.intake?.[i] ?? null
+    const industry = catalog.services.find(s => s.id === g.serviceIds[0])?.industry
+    const form = industry ? forms.get(industry) : undefined
+    if (!form) {
+      if (given) throw new BookingError('intake', 'form_changed')
+      return null
+    }
+    if (!given) {
+      if (input.mode === 'online') throw new BookingError('intake', 'required')
+      return null
+    }
+    if (given.formId !== form.id) throw new BookingError('intake', 'form_changed')
+    try {
+      const r = checkAnswers(form.schema, given.answers, { addonIds: g.addonIds, photoOk: url => !!refPhotoFor(url, shop.id) })
+      if (r.missingAddons.length) throw new BookingError('intake', `addon_missing:${r.missingAddons[0]}`)
+      return { formId: form.id, answers: r.answers, requiresReview: r.requiresReview }
+    } catch (e) {
+      if (e instanceof FormError) throw new BookingError('intake', e.field ? `${e.code}:${e.field}` : e.code)
+      throw e
+    }
+  })
 }
 
 async function uniqueCode(q: Tx, shopId: string): Promise<string> {
@@ -180,6 +219,7 @@ export async function createBooking(input: CreateInput): Promise<CreateResult> {
   if (mode === 'online') windowCheck(shop, input.date, input.start, input.now)
   const catalog = await loadCatalog(shop.id, { forCustomers: mode === 'online' })
   if (input.kind !== 'block') validateGuests(catalog, input.guests, shop, mode)
+  const intake = input.kind === 'block' ? [] : await checkIntake(shop, catalog, input)
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -248,8 +288,8 @@ export async function createBooking(input: CreateInput): Promise<CreateResult> {
           `
           for (const it of items) {
             await tx`
-              insert into app.booking_items (booking_id, service_id, kind, name, name_zh, duration_min, price_cents, sort)
-              values (${row.id}, ${it.serviceId}, ${it.kind}, ${it.name}, ${it.nameZh}, ${it.durationMin}, ${it.priceCents}, ${it.sort})
+              insert into app.booking_items (booking_id, service_id, kind, name, name_zh, duration_min, price_cents, sort, service_version_id)
+              values (${row.id}, ${it.serviceId}, ${it.kind}, ${it.name}, ${it.nameZh}, ${it.durationMin}, ${it.priceCents}, ${it.sort}, ${it.serviceVersionId ?? null})
             `
           }
           await tx`
@@ -257,9 +297,17 @@ export async function createBooking(input: CreateInput): Promise<CreateResult> {
             values (${row.id}, ${mode === 'online' ? 'customer' : 'shop'}, ${input.createdBy ?? null}, 'created',
                     ${sql.json({ kind: input.kind, forced: !!input.force })})
           `
+          const answered = intake[i]
+          if (answered) {
+            await tx`
+              insert into app.intake_responses (booking_id, shop_id, form_id, answers, requires_review, review_state)
+              values (${row.id}, ${shop.id}, ${answered.formId}, ${tx.json(answered.answers as never)}, ${answered.requiresReview},
+                      ${answered.requiresReview ? 'pending' : 'not_needed'})
+            `
+          }
           created.push({ ...row, items })
         }
-        return { code, token: created[0].manageToken, bookings: created }
+        return { code, token: created[0].manageToken, bookings: created, review: intake.some(x => x?.requiresReview) }
       })
     } catch (e) {
       if (isOverlapViolation(e)) {
@@ -308,9 +356,10 @@ export async function bookingsWithItems(rows: Booking[]): Promise<Booking[]> {
 
 export async function dayBookings(shopId: string, date: string, staffId?: string): Promise<Booking[]> {
   const rows = await sql<Booking[]>`
-    select * from app.bookings where shop_id = ${shopId} and date = ${date}
-      ${staffId ? sql`and staff_id = ${staffId}` : sql``}
-    order by start_min
+    select b.*, exists (select 1 from app.intake_responses r where r.booking_id = b.id and r.review_state = 'pending') as review_pending
+    from app.bookings b where b.shop_id = ${shopId} and b.date = ${date}
+      ${staffId ? sql`and b.staff_id = ${staffId}` : sql``}
+    order by b.start_min
   `
   return bookingsWithItems(rows)
 }
@@ -557,8 +606,8 @@ export async function shopSetItems(shop: Shop, bookingId: string, serviceIds: st
         est_price_cents = ${items.reduce((t, i) => t + (i.priceCents ?? 0), 0)}, resource_ids = ${tx.array(resourceIds)}::uuid[] where id = ${b.id}`
       await tx`delete from app.booking_items where booking_id = ${b.id}`
       for (const it of items) {
-        await tx`insert into app.booking_items (booking_id, service_id, kind, name, name_zh, duration_min, price_cents, sort)
-          values (${b.id}, ${it.serviceId}, ${it.kind}, ${it.name}, ${it.nameZh}, ${it.durationMin}, ${it.priceCents}, ${it.sort})`
+        await tx`insert into app.booking_items (booking_id, service_id, kind, name, name_zh, duration_min, price_cents, sort, service_version_id)
+          values (${b.id}, ${it.serviceId}, ${it.kind}, ${it.name}, ${it.nameZh}, ${it.durationMin}, ${it.priceCents}, ${it.sort}, ${it.serviceVersionId ?? null})`
       }
       await tx`insert into app.booking_events (booking_id, actor, actor_user, action, detail)
         values (${b.id}, 'shop', ${userId}, 'items', ${sql.json({ duration: dur })})`

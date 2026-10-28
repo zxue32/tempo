@@ -11,7 +11,10 @@ import { saveShifts, upsertSpecialDay, deleteSpecialDay } from '@/lib/data/sched
 import { createBooking, shopMove, shopSetStatus, shopSetItems, shopUpdateDetails, shopMarkStarted, getBooking, bookingEvents, BookingError } from '@/lib/bookings'
 import { parsePhone, phoneKey } from '@/lib/phone'
 import { marketOf } from '@/lib/markets'
-import { publicImageFor } from '@/lib/media'
+import { publicImageFor, refPhotoFor } from '@/lib/media'
+import { intakeFor, formById, reviewIntake, saveForm } from '@/lib/data/forms'
+import { answerText, FormError } from '@/lib/forms'
+import { shopIndustries } from '@/lib/industries/shop'
 import { audit } from '@/lib/audit'
 import { logError } from '@/lib/log'
 import { saveResource, deleteResource, addGalleryItem, updateGalleryItem, deleteGalleryItem, reorderGallery, listPalette, saveSwatch, deleteSwatch, reorderPalette } from '@/lib/data/rules'
@@ -103,7 +106,7 @@ export async function bookingDetail(shopId: string, bookingId: string) {
   if (member.role === 'staff' && b.staffId !== member.staffId) return null
   const [events, group, stats, cust] = await Promise.all([
     bookingEvents(b.id),
-    b.groupId ? sql<{ id: string; staffId: string }[]>`select id, staff_id from app.bookings where group_id = ${b.groupId}` : Promise.resolve([]),
+    b.groupId ? sql<{ id: string; staffId: string }[]>`select id, staff_id from app.bookings where group_id = ${b.groupId} and shop_id = ${shopId}` : Promise.resolve([]),
     b.customerId
       ? sql<{ visits: number; noShows: number }[]>`
           select count(*) filter (where status = 'completed')::int as visits, count(*) filter (where status = 'no_show')::int as no_shows
@@ -111,7 +114,61 @@ export async function bookingDetail(shopId: string, bookingId: string) {
       : Promise.resolve([{ visits: 0, noShows: 0 }]),
     b.customerId ? sql<{ preferences: Preferences | null }[]>`select preferences from app.customers where id = ${b.customerId}` : Promise.resolve([]),
   ])
-  return { booking: b, events, groupSize: group.length || 1, stats: stats[0], reminderSent: !!b.reminderSentAt, prefs: cust[0]?.preferences ?? null }
+  return { booking: b, events, groupSize: group.length || 1, stats: stats[0], reminderSent: !!b.reminderSentAt, prefs: cust[0]?.preferences ?? null, intake: await intakeView(shopId, b.id) }
+}
+
+/** The client's answers as the shop reads them: question, answer, photos; personal ones marked (CORE-05). */
+async function intakeView(shopId: string, bookingId: string) {
+  const r = (await intakeFor(shopId, [bookingId])).get(bookingId)
+  if (!r) return null
+  const form = await formById(shopId, r.formId)
+  const rows = (form?.schema.fields ?? []).filter(f => f.key in r.answers).map(f => {
+    const v = r.answers[f.key]
+    return {
+      key: f.key, label: f.label, sensitive: !!f.sensitive,
+      text: f.type === 'photo' ? null : { en: answerText(f, v, 'en'), zh: answerText(f, v, 'zh') },
+      photos: f.type === 'photo' && Array.isArray(v) ? (v as string[]).filter(u => refPhotoFor(u, shopId)) : [],
+    }
+  })
+  return { reviewState: r.reviewState, version: form?.version ?? null, rows }
+}
+
+/** Save the shop's booking questions for one of its industries as a new version, switched on or off (CORE-05). */
+export async function saveIntakeFormAction(shopId: string, industry: string, schema: unknown, active: boolean): Promise<Result<{ version: number }>> {
+  const { user } = await requireShop(shopId, 'manager')
+  const shop = (await getShop(shopId))!
+  if (!shopIndustries(shop).includes(industry as never)) return fail('invalid', 'industry')
+  try {
+    const f = await saveForm(shopId, industry, schema, !!active, user.id)
+    await audit(sql, { shopId, actorUser: user.id, action: 'form.save', targetType: 'intake_form', targetId: f.id, detail: { industry, version: f.version, active: f.active, fields: f.schema.fields.length } })
+    revalidatePath(`/dashboard/${shopId}/rules`)
+    return { ok: true, version: f.version }
+  } catch (e) {
+    if (e instanceof FormError) return fail('invalid', e.field ?? e.code)
+    if ((e as { code?: string }).code === '23505') return fail('conflict')
+    logError('form', e)
+    return fail('server')
+  }
+}
+
+/** The shop checked a client's answers: confirm the booking, or decline it with a reason the client receives. */
+export async function reviewIntakeAction(shopId: string, bookingId: string, decision: 'approve' | 'decline', reason?: string): Promise<Result> {
+  const { user } = await requireShop(shopId, 'manager')
+  if (decision !== 'approve' && decision !== 'decline') return fail('invalid')
+  const why = reason?.trim().slice(0, 500) || null
+  if (decision === 'decline' && !why) return fail('invalid', 'reason')
+  const shop = (await getShop(shopId))!
+  try {
+    await reviewIntake(shop, bookingId, decision, user.id, why)
+  } catch (e) {
+    return bookingFail(e)
+  }
+  await audit(sql, { shopId, actorUser: user.id, action: decision === 'approve' ? 'intake.approve' : 'intake.decline', targetType: 'booking', targetId: bookingId })
+  const b = (await getBooking(shopId, bookingId))!
+  await mailCustomer(decision === 'approve' ? 'confirmed' : 'cancelled_by_shop', shop, [b], await listStaff(shopId), why).catch(e => logError('mail', e))
+  if (decision === 'decline') await notifyWaitlist(shop, b.date).catch(e => logError('waitlist', e))
+  revalidatePath(`/dashboard/${shopId}`)
+  return { ok: true }
 }
 
 export async function setBookingStatusAction(shopId: string, bookingId: string, status: BookingStatus, opts: { reason?: string; notify?: boolean } = {}): Promise<Result> {

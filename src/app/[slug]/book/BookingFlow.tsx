@@ -4,6 +4,8 @@ import { shopHasHairTools, shopHasNailTools } from '@/lib/industries/shop'
 import type { IndustryKey } from '@/lib/industries/registry'
 import type { CurrencyCode } from '@/lib/markets'
 import { formatMoney } from '@/lib/money'
+import { missingRequired, settle, type FormSchema } from '@/lib/forms'
+import { IntakeQuestions } from './IntakeQuestions'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useI18n } from '@/components/i18n'
@@ -22,9 +24,11 @@ export type FlowShop = {
   cutoffMinutes: number; showPrices: boolean; live: boolean; note: string | null; phone: string | null; waitlist: boolean
 }
 export type FlowInitial = { services: string[]; addons: string[]; staff: string | null; date: string | null; look: { id: string; url: string } | null; design: NailDesign | null; hairColor: { id: string; label: string; hex: string } | null }
-type Svc = { id: string; kind: 'service' | 'addon'; category: string; appliesTo: string[]; name: string; nameZh: string | null; descEn: string | null; descZh: string | null; durationMin: number; priceCents: number | null; priceFrom: boolean; questionEn: string | null; questionZh: string | null }
+type Svc = { id: string; kind: 'service' | 'addon'; category: string; industry: string; appliesTo: string[]; name: string; nameZh: string | null; descEn: string | null; descZh: string | null; durationMin: number; priceCents: number | null; priceFrom: boolean; questionEn: string | null; questionZh: string | null }
 type Person = { id: string; name: string; nameZh: string | null; bioEn: string | null; bioZh: string | null; color: string; photoUrl: string | null }
-type Guest = { serviceIds: string[]; addonIds: string[]; staffId: string | null; answers?: Record<string, boolean> }
+type Guest = { serviceIds: string[]; addonIds: string[]; staffId: string | null; answers?: Record<string, boolean>; intake?: Record<string, unknown> }
+/** the shop's active intake form for an industry (CORE-05) */
+export type FlowForm = { id: string; industry: string; schema: FormSchema }
 type DaySum = { date: string; closed: boolean; count: number }
 type SlotRes = { start: number; staff: string[]; minutes: number[] }
 
@@ -33,8 +37,8 @@ const WINDOW = 14
 
 const hasQuestion = (s: Svc) => !!(s.questionEn || s.questionZh)
 
-export function BookingFlow({ shop, today, services, staff, skills, initial, emailOn = false, swatches = [] }: {
-  shop: FlowShop; today: string; services: Svc[]; staff: Person[]; skills: Skill[]; initial: FlowInitial; emailOn?: boolean; swatches?: SwatchOption[]
+export function BookingFlow({ shop, today, services, staff, skills, initial, emailOn = false, swatches = [], forms = [] }: {
+  shop: FlowShop; today: string; services: Svc[]; staff: Person[]; skills: Skill[]; initial: FlowInitial; emailOn?: boolean; swatches?: SwatchOption[]; forms?: FlowForm[]
 }) {
   const { t, lang } = useI18n()
   const router = useRouter()
@@ -71,6 +75,8 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
   const [notice, setNotice] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', phone: '', email: '', notes: '', agree: false, website: '' })
   const [photo, setPhoto] = useState<string | null>(initial.look?.url ?? null)
+  // what the customer sees: their own copy, because an uploaded reference photo is private to the shop (CORE-04)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(initial.look?.url ?? null)
   const [design, setDesign] = useState<NailDesign | null>(initial.design)
   const [hairColor, setHairColor] = useState(initial.hairColor)
   // what this phone booked with last time (kept only on the device), offered as a one-tap repeat
@@ -123,11 +129,26 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
   const priceOf = (gs: Guest) => [...gs.serviceIds, ...gs.addonIds].reduce((s, id) => s + (byId.get(id)?.priceCents ?? 0), 0)
   const anyFrom = guests.some(gs => [...gs.serviceIds, ...gs.addonIds].some(id => byId.get(id)?.priceFrom))
   const total = guests.reduce((s, gs) => s + priceOf(gs), 0)
+  // the intake form that applies to what this guest picked, if the shop has one switched on
+  const formFor = (gs: Guest) => { const ind = byId.get(gs.serviceIds[0] ?? '')?.industry; return ind ? forms.find(f => f.industry === ind) ?? null : null }
   const questionsFor = (gs: Guest) => {
     const cats = catsOf(gs)
-    return services.filter(s => s.kind === 'addon' && hasQuestion(s) && (!s.appliesTo.length || s.appliesTo.some(c => cats.has(c))))
+    // an add-on the shop's intake form already asks about isn't asked twice
+    const f = formFor(gs)
+    const asked = f ? settle(f.schema, {}).linked : new Set<string>()
+    return services.filter(s => s.kind === 'addon' && hasQuestion(s) && !asked.has(s.id) && (!s.appliesTo.length || s.appliesTo.some(c => cats.has(c))))
   }
-  const ready1 = guests.every(gs => gs.serviceIds.length > 0 && questionsFor(gs).every(q => gs.answers?.[q.id] !== undefined))
+  const onIntake = (answers: Record<string, unknown>) => {
+    const form = formFor(guest)
+    if (!form) return
+    // answers that call for an add-on bring it in; changing the answer takes it out again
+    const { addons, linked } = settle(form.schema, answers)
+    const addonIds = [...guest.addonIds.filter(id => !linked.has(id) || addons.has(id)), ...[...addons].filter(id => !guest.addonIds.includes(id) && byId.has(id))]
+    update(g, { intake: answers, addonIds })
+    resetTime()
+  }
+  const ready1 = guests.every(gs => gs.serviceIds.length > 0 && questionsFor(gs).every(q => gs.answers?.[q.id] !== undefined)
+    && (() => { const f = formFor(gs); return !f || missingRequired(f.schema, gs.intake ?? {}).length === 0 })())
   const answer = (id: string, yes: boolean) => {
     update(g, { answers: { ...(guest.answers ?? {}), [id]: yes }, addonIds: yes ? Array.from(new Set([...guest.addonIds, id])) : guest.addonIds.filter(x => x !== id) })
     resetTime()
@@ -215,6 +236,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       setPhoto(data.url)
+      setPhotoPreview(URL.createObjectURL(blob))
       setLookId(null)
     } catch {
       setErr(t('bf.photoErr'))
@@ -250,7 +272,10 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
       const res = await fetch(`/api/public/${shop.slug}/bookings`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          guests: guests.map(({ serviceIds, addonIds, staffId }) => ({ serviceIds, addonIds, staffId })), date, start: slot.start,
+          guests: guests.map(gs => {
+            const f = formFor(gs)
+            return { serviceIds: gs.serviceIds, addonIds: gs.addonIds, staffId: gs.staffId, intake: f ? { formId: f.id, answers: settle(f.schema, gs.intake ?? {}).answers } : null }
+          }), date, start: slot.start,
           name: form.name.trim(), phone: form.phone.trim(), email: form.email.trim(),
           notes: [form.notes.trim(), lune ? `${t('lu.from3d')}「${lune.name}」: ${noteFromSummary(lune.summary)}` : design ? `${t('nd.yourDesign')}: ${describeDesign(design, t as (k: string) => string)}` : '', hairColor ? `${t('hc.chosen')}: ${hairColor.label}` : ''].filter(Boolean).join('\n').slice(0, 1000),
           photoUrl, lookId: photoUrl ? null : lookId, lang, website: form.website, session: visitId(), design,
@@ -267,6 +292,19 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
         return
       }
       const code = data.error as string
+      if (code === 'intake') {
+        const [why, arg] = String(data.detail ?? '').split(':')
+        if (why === 'form_changed') { setErr(t('in.formChanged')); router.refresh(); goStep(1); return }
+        if (why === 'addon_missing' && arg && byId.has(arg)) {
+          const a = byId.get(arg)!
+          setGuests(list => list.map(x => (x.addonIds.includes(arg) || !formFor(x) ? x : { ...x, addonIds: [...x.addonIds, arg] })))
+          setSlot(null); goStep(2); setNotice(t('in.addonMissing', pick(lang, a.name, a.nameZh))); return
+        }
+        const field = forms.flatMap(f => f.schema.fields).find(f => f.key === arg)
+        setErr(why === 'required' && field ? t('in.required', field.label[lang]) : t('in.invalid'))
+        goStep(1)
+        return
+      }
       if (code === 'taken') { setNotice(t('bf.slotGone')); setSlot(null); goStep(2); load(windowStart, date); return }
       const msg: Record<string, string> = {
         limit: t('bf.err.limit'), blocked: t('bf.err.blocked'), not_open: t('bf.err.not_open'), service_gone: t('bf.err.service_gone'), capability_disabled: t('bf.err.capability_disabled'), market_unsupported: t('bf.err.market_unsupported'),
@@ -418,6 +456,10 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                     )
                   })}
                 </section>
+              )}
+              {guest.serviceIds.length > 0 && formFor(guest) && (
+                <IntakeQuestions slug={shop.slug} form={formFor(guest)!.schema} answers={guest.intake ?? {}} onChange={onIntake}
+                  addons={services.filter(s => s.kind === 'addon')} showPrices={shop.showPrices} currency={shop.currency} />
               )}
               {(() => {
                 const cats = catsOf(guest)
@@ -606,8 +648,8 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                 {photo ? (
                   <div className="flex items-center gap-3">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={photo} alt={t('bf.photo')} className="h-24 w-24 rounded-xl object-cover" />
-                    <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => { setPhoto(null); setLookId(null) }}>{t('bf.photoRemove')}</button>
+                    {photoPreview && <img src={photoPreview} alt={t('bf.photo')} className="h-24 w-24 rounded-xl object-cover" />}
+                    <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => { setPhoto(null); setPhotoPreview(null); setLookId(null) }}>{t('bf.photoRemove')}</button>
                     {lookId && <span className="text-[12.5px] s-muted">{t('bf.lookChosen')}</span>}
                   </div>
                 ) : (

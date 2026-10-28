@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { getShopBySlug } from '@/lib/data/shops'
 import { createBooking, BookingError } from '@/lib/bookings'
 import { listStaff } from '@/lib/data/catalog'
-import { guestsSchema, dateStr, minuteOfDay, emailRe, trimOrNull } from '@/lib/validate'
+import { guestSchema, uuid, dateStr, minuteOfDay, emailRe, trimOrNull } from '@/lib/validate'
 import { parsePhone } from '@/lib/phone'
 import { refPhotoFor } from '@/lib/media'
 import { marketOf } from '@/lib/markets'
@@ -13,8 +13,10 @@ import { sql } from '@/lib/db'
 import { recordFunnel } from '@/lib/data/pilot'
 import { isNailDesign } from '@/components/NailArt'
 
+// each guest may carry answers to the shop's intake form; they are checked against that form on the server (CORE-05)
+const intake = z.object({ formId: uuid, answers: z.record(z.string().max(32), z.unknown()) }).nullable().optional()
 const body = z.object({
-  guests: guestsSchema,
+  guests: z.array(guestSchema.extend({ intake })).min(1).max(10),
   date: dateStr,
   start: minuteOfDay,
   name: z.string().trim().min(1).max(80),
@@ -51,7 +53,8 @@ export async function POST(req: Request, ctx: RouteContext<'/api/public/[slug]/b
       photoUrl = look?.url ?? null
     }
     const res = await createBooking({
-      shop, mode: 'online', kind: 'online', date: d.date, start: d.start, guests: d.guests,
+      shop, mode: 'online', kind: 'online', date: d.date, start: d.start,
+      guests: d.guests.map(({ serviceIds, addonIds, staffId }) => ({ serviceIds, addonIds, staffId })), intake: d.guests.map(g => g.intake ?? null),
       contact: { name: d.name, phone: d.phone, email: d.email.toLowerCase() },
       notes: trimOrNull(d.notes, 1000), photoUrl, lang: d.lang, design: isNailDesign(d.design) ? d.design : null,
     })
@@ -59,8 +62,9 @@ export async function POST(req: Request, ctx: RouteContext<'/api/public/[slug]/b
     // someone on the waitlist who now booked that day no longer needs to wait
     await sql`update app.waitlist set status = 'booked' where shop_id = ${shop.id} and date = ${d.date} and lower(email) = ${d.email.toLowerCase()} and status in ('waiting', 'notified')`.catch(() => {})
     const staff = await listStaff(shop.id)
-    await Promise.all([mailCustomer('confirmed', shop, res.bookings, staff), mailShop('new', shop, res.bookings, staff)])
-    return json({ token: res.token, code: res.code })
+    // answers the shop still has to look at make this a request, not a confirmed booking
+    await Promise.all([mailCustomer(res.review ? 'requested' : 'confirmed', shop, res.bookings, staff), mailShop('new', shop, res.bookings, staff)])
+    return json({ token: res.token, code: res.code, review: res.review })
   } catch (e) {
     if (e instanceof BookingError) return errorResponse(e)
     return errorResponse(e)

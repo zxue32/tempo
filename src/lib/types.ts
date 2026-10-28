@@ -132,6 +132,8 @@ export type Service = {
   questionZh: string | null
   /** The industry this service belongs to (CORE-02). */
   industry: IndustryKey
+  /** Its current immutable version (CORE-05); bookings point at the version they were made with. */
+  versionId?: string | null
 }
 
 export type Resource = { id: string; shopId: string; name: string; nameZh: string | null; quantity: number; sort: number }
@@ -163,10 +165,14 @@ export type Shift = { staffId: string; date: string; startMin: number; endMin: n
 export type BookingStatus = 'confirmed' | 'completed' | 'no_show' | 'cancelled'
 export type BookingKind = 'online' | 'walkin' | 'phone' | 'block'
 
-export type BookingItem = { id?: string; serviceId: string | null; kind: 'service' | 'addon'; name: string; nameZh: string | null; durationMin: number; priceCents: number | null; sort: number }
+export type BookingItem = { id?: string; serviceId: string | null; kind: 'service' | 'addon'; name: string; nameZh: string | null; durationMin: number; priceCents: number | null; sort: number
+  /** the immutable service version this was booked with (CORE-05) */
+  serviceVersionId?: string | null }
 
 export type Booking = {
   id: string
+  /** the shop still has to check the client's answers (CORE-05); only on day views */
+  reviewPending?: boolean
   shopId: string
   staffId: string
   customerId: string | null
