@@ -5,6 +5,8 @@ import { searchBookings } from '@/lib/data/insights'
 import { bookingFilters } from '@/lib/filters'
 import { hhmm, nowInZone } from '@/lib/tz'
 import { fromMinor } from '@/lib/money'
+import { audit } from '@/lib/audit'
+import { sql } from '@/lib/db'
 
 const cell = (v: unknown) => {
   const s = v == null ? '' : String(v)
@@ -15,7 +17,7 @@ const cell = (v: unknown) => {
 
 export async function GET(req: Request, ctx: RouteContext<'/dashboard/[shopId]/bookings/export'>) {
   const { shopId } = await ctx.params
-  await requireShop(shopId, 'manager')
+  const { user } = await requireShop(shopId, 'manager')
   const shop = (await getShop(shopId))!
   const sp = Object.fromEntries(new URL(req.url).searchParams)
   const f = bookingFilters(sp, nowInZone(shop.timezone).date)
@@ -30,6 +32,8 @@ export async function GET(req: Request, ctx: RouteContext<'/dashboard/[shopId]/b
       b.estPriceCents != null ? fromMinor(b.estPriceCents, shop.currency) : '', b.notes, b.internalNote, b.createdAt.toISOString(), shop.currency,
     ].map(cell).join(','))
   }
+  // exporting customer contact details is recorded (how many rows, which dates), not what was exported (CORE-04)
+  await audit(sql, { shopId, actorUser: user.id, action: 'bookings.export', detail: { rows: rows.length, from: f.from, to: f.to } })
   return new Response('﻿' + lines.join('\r\n'), {
     headers: {
       'content-type': 'text/csv; charset=utf-8',

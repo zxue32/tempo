@@ -9,6 +9,7 @@ import { allow, clientKey } from '@/lib/ratelimit'
 import { mailCustomer, mailShop } from '@/lib/email'
 import { nowInZone, diffDays, addDays } from '@/lib/tz'
 import type { GuestRequest } from '@/lib/engine'
+import { logError } from '@/lib/log'
 
 const body = z.discriminatedUnion('action', [
   z.object({ action: z.literal('availability'), from: dateStr, days: z.number().int().min(1).max(21), date: dateStr.nullable(), staffId: uuid.nullable().optional() }),
@@ -72,7 +73,7 @@ export async function POST(req: Request, ctx: RouteContext<'/api/manage/[token]'
     const res = await cancelByToken(token, reason)
     const fresh = (await byToken(token))!.group.filter(b => res.group.some(g => g.id === b.id))
     await Promise.all([mailCustomer('cancelled', shop, fresh, staff, reason), mailShop('cancelled', shop, fresh, staff)])
-    await notifyWaitlist(shop, fresh[0]?.date ?? group[0].date).catch(e => console.error('waitlist', e))
+    await notifyWaitlist(shop, fresh[0]?.date ?? group[0].date).catch(e => logError('waitlist', e))
     return json({ ok: true })
   } catch (e) {
     return errorResponse(e)

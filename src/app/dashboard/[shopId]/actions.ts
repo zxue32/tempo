@@ -11,6 +11,9 @@ import { saveShifts, upsertSpecialDay, deleteSpecialDay } from '@/lib/data/sched
 import { createBooking, shopMove, shopSetStatus, shopSetItems, shopUpdateDetails, shopMarkStarted, getBooking, bookingEvents, BookingError } from '@/lib/bookings'
 import { parsePhone, phoneKey } from '@/lib/phone'
 import { marketOf } from '@/lib/markets'
+import { publicImageFor } from '@/lib/media'
+import { audit } from '@/lib/audit'
+import { logError } from '@/lib/log'
 import { saveResource, deleteResource, addGalleryItem, updateGalleryItem, deleteGalleryItem, reorderGallery, listPalette, saveSwatch, deleteSwatch, reorderPalette } from '@/lib/data/rules'
 import { integrityCheck } from '@/lib/data/pilot'
 import { savePreferences } from '@/lib/data/insights'
@@ -31,7 +34,7 @@ const fail = (error: string, detail?: string): { ok: false; error: string; detai
 
 function bookingFail(e: unknown) {
   if (e instanceof BookingError) return fail(e.code, e.detail)
-  console.error(e)
+  logError('action', e)
   return fail('server')
 }
 
@@ -124,7 +127,7 @@ export async function setBookingStatusAction(shopId: string, bookingId: string, 
     if (status === 'cancelled' && opts.notify && updated.guestEmail && updated.kind !== 'block') {
       await mailCustomer('cancelled_by_shop', shop, [updated], await listStaff(shop.id), reason)
     }
-    if (status === 'cancelled') await notifyWaitlist(shop, updated.date).catch(e => console.error('waitlist', e))
+    if (status === 'cancelled') await notifyWaitlist(shop, updated.date).catch(e => logError('waitlist', e))
     return { ok: true }
   } catch (e) {
     return bookingFail(e)
@@ -207,6 +210,8 @@ export async function saveStaffAction(shopId: string, staffId: string | null, in
   const p = staffSchema.safeParse(input)
   if (!p.success) return fail('invalid', p.error.issues[0]?.path.join('.'))
   const d = { ...p.data, nameZh: p.data.nameZh || null, bioEn: p.data.bioEn || null, bioZh: p.data.bioZh || null }
+  // a team photo is public: never a customer's private photo or another shop's upload (CORE-04)
+  if (d.photoUrl && !publicImageFor(d.photoUrl, shopId)) return fail('invalid', 'photoUrl')
   if (d.defaultWeek) for (const v of Object.values(d.defaultWeek)) if (!(v.end > v.start)) return fail('invalid', 'defaultWeek')
   if (staffId) {
     await updateStaff(shopId, staffId, d)
@@ -219,8 +224,11 @@ export async function saveStaffAction(shopId: string, staffId: string | null, in
 }
 
 export async function deleteStaffAction(shopId: string, staffId: string): Promise<Result<{ result: string }>> {
-  await requireShop(shopId, 'manager')
-  return { ok: true, result: await deleteStaff(shopId, staffId) }
+  const { user } = await requireShop(shopId, 'manager')
+  const result = await deleteStaff(shopId, staffId)
+  if (result === 'not_found') return fail('not_found')
+  await audit(sql, { shopId, actorUser: user.id, action: `staff.${result === 'deleted' ? 'delete' : 'deactivate'}`, targetType: 'staff', targetId: staffId })
+  return { ok: true, result }
 }
 
 export async function reorderStaffAction(shopId: string, ids: string[]): Promise<Result> {
@@ -254,12 +262,15 @@ export async function inviteStaffAction(shopId: string, staffId: string, email: 
   const link = `${env.siteUrl}/join/${token}`
   const emailed = !!e && emailConfigured()
   if (emailed) await mailStaffInvite(shop, e, shop.defaultLang, link)
+  await audit(sql, { shopId, actorUser: user.id, action: 'member.invite', targetType: 'staff', targetId: staffId, detail: { role: role === 'manager' ? 'manager' : 'staff', emailed } })
   return { ok: true, link, emailed }
 }
 
 export async function removeMemberAction(shopId: string, userId: string): Promise<Result> {
-  await requireShop(shopId, 'manager')
-  await sql`delete from app.shop_members where shop_id = ${shopId} and user_id = ${userId} and role <> 'owner'`
+  const { user } = await requireShop(shopId, 'manager')
+  if (!uuid.safeParse(userId).success) return fail('invalid')
+  const gone = await sql`delete from app.shop_members where shop_id = ${shopId} and user_id = ${userId} and role <> 'owner' returning user_id`
+  if (gone.length) await audit(sql, { shopId, actorUser: user.id, action: 'member.remove', targetType: 'user', targetId: userId })
   return { ok: true }
 }
 
@@ -401,6 +412,7 @@ export async function saveSettingsAction(shopId: string, input: z.input<typeof s
   if (d.hours) for (const h of Object.values(d.hours)) if (!h.closed && !(h.close > h.open)) return fail('bad_time')
   if (d.mapUrl && !/^https?:\/\//.test(d.mapUrl)) return fail('invalid', 'mapUrl')
   if (d.email && !emailRe.test(d.email)) return fail('invalid', 'email')
+  for (const k of ['logoUrl', 'coverUrl'] as const) if (d[k] && !publicImageFor(d[k], shopId)) return fail('invalid', k)
   const toNull = (v: string | null | undefined) => (v === undefined ? undefined : v || null)
   const patch: ShopPatch = { ...d } as ShopPatch
   for (const k of ['nameZh', 'aboutEn', 'aboutZh', 'phone', 'email', 'address', 'city', 'mapUrl', 'instagram', 'bookingNoteEn', 'bookingNoteZh'] as const) {
@@ -420,7 +432,7 @@ export async function uploadImageAction(shopId: string, form: FormData): Promise
     return { ok: true, url }
   } catch (e) {
     if (e instanceof UploadError) return fail('upload', e.message)
-    console.error(e)
+    logError('upload', e)
     return fail('server')
   }
 }
@@ -428,18 +440,25 @@ export async function uploadImageAction(shopId: string, form: FormData): Promise
 // ---------------------------------------------------------------- customers
 
 export async function saveCustomerAction(shopId: string, id: string, d: { name: string; phone: string; email: string; notes: string; blocked: boolean }): Promise<Result> {
-  await requireShop(shopId, 'manager')
+  const { user } = await requireShop(shopId, 'manager')
   const p = z.object({ name: z.string().trim().min(1).max(80), phone: z.string().trim().max(30), email: z.string().trim().max(120), notes: z.string().max(2000), blocked: z.boolean() }).safeParse(d)
   if (!p.success) return fail('invalid')
   const email = p.data.email && emailRe.test(p.data.email) ? p.data.email.toLowerCase() : null
   const region = await phoneRegionOf(shopId)
   try {
+    const [before] = await sql<{ name: string; phone: string | null; email: string | null; notes: string | null; blocked: boolean }[]>`
+      select name, phone, email, notes, blocked from app.customers where id = ${id} and shop_id = ${shopId}`
+    if (!before) return fail('not_found')
     await sql`
       update app.customers set name = ${p.data.name}, phone = ${p.data.phone || null}, phone_norm = ${phoneKey(p.data.phone, region)},
         phone_e164 = ${parsePhone(p.data.phone, region)?.e164 ?? null},
         email = ${email}, notes = ${p.data.notes || null}, blocked = ${p.data.blocked}
       where id = ${id} and shop_id = ${shopId}
     `
+    // which fields changed, never their values
+    const after = { name: p.data.name, phone: p.data.phone || null, email, notes: p.data.notes || null, blocked: p.data.blocked }
+    const fields = (Object.keys(after) as (keyof typeof after)[]).filter(k => after[k] !== before[k])
+    if (fields.length) await audit(sql, { shopId, actorUser: user.id, action: 'customer.update', targetType: 'customer', targetId: id, detail: { fields } })
   } catch (e) {
     if ((e as { code?: string }).code === '23505') return fail('duplicate_phone')
     throw e
@@ -461,12 +480,13 @@ const prefsSchema = z.object({
 
 /** The client's preference card: what they usually like, kept by the shop. */
 export async function savePreferencesAction(shopId: string, customerId: string, input: unknown): Promise<Result> {
-  await requireShop(shopId, 'manager')
+  const { user } = await requireShop(shopId, 'manager')
   const p = prefsSchema.safeParse(input)
   if (!p.success || !uuid.safeParse(customerId).success) return fail('invalid')
   const prefs = cleanPrefs({ ...p.data, shape: p.data.shape ?? undefined, length: p.data.length ?? undefined, finish: p.data.finish ?? undefined, staffId: p.data.staffId ?? null })
   if (prefs.staffId && !(await listStaff(shopId)).some(s => s.id === prefs.staffId)) return fail('invalid')
   if (!(await savePreferences(shopId, customerId, prefs))) return fail('not_found')
+  await audit(sql, { shopId, actorUser: user.id, action: 'customer.preferences', targetType: 'customer', targetId: customerId, detail: { fields: Object.keys(prefs) } })
   revalidatePath(`/dashboard/${shopId}/customers/${customerId}`)
   return { ok: true }
 }
@@ -502,7 +522,7 @@ export async function uploadGalleryAction(shopId: string, form: FormData): Promi
     return { ok: true, id: item.id, url }
   } catch (e) {
     if (e instanceof UploadError) return fail('upload', e.message)
-    console.error(e)
+    logError('action', e)
     return fail('server')
   }
 }

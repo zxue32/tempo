@@ -327,7 +327,7 @@ export async function byToken(token: string): Promise<{ primary: Booking; group:
   const [primary] = await sql<Booking[]>`select * from app.bookings where manage_token = ${token}`
   if (!primary) return null
   const group = primary.groupId
-    ? await sql<Booking[]>`select * from app.bookings where group_id = ${primary.groupId} order by created_at, id`
+    ? await sql<Booking[]>`select * from app.bookings where group_id = ${primary.groupId} and shop_id = ${primary.shopId} order by created_at, id`
     : [primary]
   const [shop] = await sql<Shop[]>`select * from app.shops where id = ${primary.shopId}`
   return { primary, group: await bookingsWithItems(group), shop }

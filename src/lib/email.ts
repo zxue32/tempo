@@ -32,8 +32,12 @@ export async function sendMail(m: Mail): Promise<void> {
       status = 'failed'
       error = (e as Error).message
     }
-  } else if (process.env.NODE_ENV !== 'test') {
+  } else if (process.env.NODE_ENV === 'development') {
+    // local development only: show the message so links can be clicked
     console.log(`[email skipped: no RESEND_API_KEY] to=${m.to} subject=${m.subject}\n${m.text}\n`)
+  } else if (process.env.NODE_ENV !== 'test') {
+    // never the recipient, the text or its links (manage and password links are keys) — CORE-04
+    console.log(`[email skipped: no RESEND_API_KEY] template=${m.template}`)
   }
   try {
     await sql`

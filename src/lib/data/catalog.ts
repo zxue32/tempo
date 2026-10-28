@@ -64,11 +64,14 @@ export async function updateStaff(shopId: string, staffId: string, input: Partia
 }
 
 /** Removes a staff member; if they have booking history they are deactivated instead. */
-export async function deleteStaff(shopId: string, staffId: string): Promise<'deleted' | 'deactivated'> {
-  const used = await sql`select 1 from app.bookings where staff_id = ${staffId} and kind <> 'block' limit 1`
+export async function deleteStaff(shopId: string, staffId: string): Promise<'deleted' | 'deactivated' | 'not_found'> {
+  // everything below is scoped to this shop: a staff id from another shop changes nothing (CORE-04)
+  const [own] = await sql`select 1 from app.staff where id = ${staffId} and shop_id = ${shopId}`
+  if (!own) return 'not_found'
+  const used = await sql`select 1 from app.bookings where staff_id = ${staffId} and shop_id = ${shopId} and kind <> 'block' limit 1`
   if (used.length) {
     await sql`update app.staff set active = false, bookable_online = false where id = ${staffId} and shop_id = ${shopId}`
-    await sql`delete from app.shifts where staff_id = ${staffId} and date >= current_date`
+    await sql`delete from app.shifts where staff_id = ${staffId} and shop_id = ${shopId} and date >= current_date`
     return 'deactivated'
   }
   await sql`delete from app.staff where id = ${staffId} and shop_id = ${shopId}`
