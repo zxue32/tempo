@@ -1,4 +1,5 @@
 'use client'
+import { INDUSTRIES } from '@/lib/templates'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { useI18n } from '@/components/i18n'
@@ -69,7 +70,7 @@ export function SettingsForm({ shop, siteUrl }: { shop: Shop; siteUrl: string })
           <div>
             <label className="lbl" htmlFor="s-ind">{t('ob.industry')}</label>
             <select id="s-ind" className="inp" value={v.industry} onChange={e => f('industry', e.target.value as typeof v.industry)}>
-              <option value="nail">{t('ind.nail')}</option><option value="barber">{t('ind.barber')}</option><option value="both">{t('ind.both')}</option>
+              {INDUSTRIES.map(k => <option key={k} value={k}>{t(`ind.${k}`)}</option>)}
             </select>
           </div>
           <div>

@@ -1,4 +1,5 @@
 'use server'
+import { isIndustry } from '@/lib/templates'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { requireUser } from '@/lib/auth'
@@ -38,7 +39,7 @@ export async function createShopAction(_: CreateState, form: FormData): Promise<
   const invite = String(form.get('invite') || '').trim().toUpperCase() || null
 
   if (!name) return { error: 'c.error', field: 'name' }
-  if (!['nail', 'barber', 'both'].includes(industry)) return { error: 'c.error', field: 'industry' }
+  if (!isIndustry(industry)) return { error: 'c.error', field: 'industry' }
   const p = slugProblem(slug)
   if (p) return { error: p === 'short' ? 'ob.slugShort' : p === 'reserved' ? 'ob.slugReserved' : 'ob.slugFormat', field: 'slug' }
   if (!isValidTimeZone(timezone)) return { error: 'c.error', field: 'timezone' }

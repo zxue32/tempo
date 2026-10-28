@@ -59,6 +59,15 @@ beforeAll(async () => {
 afterAll(async () => { await sql.end() })
 
 describe('shop lifecycle', () => {
+  it('opens a massage shop with its own starter menu', async () => {
+    const spa = await createShop({ ownerId: OWNER, ownerEmail: 'owner@example.com', name: 'Calm Spa', slug: 'calm-spa', industry: 'spa', timezone: 'America/New_York', defaultLang: 'zh', phone: '1', ownerStaffName: 'Lin' })
+    expect(spa.industry).toBe('spa')
+    expect(spa.theme).toBe('sage')
+    const menu = await listServices(spa.id)
+    expect(menu.map(s => s.nameZh)).toContain('精油推拿')
+    expect(menu.every(s => ['massage', 'body', 'foot', 'addon'].includes(s.category))).toBe(true)
+  })
+
   it('needs review before it can take bookings, and invites skip review', async () => {
     expect(await readiness(shop.id)).toEqual([])
     await expect(createBooking({

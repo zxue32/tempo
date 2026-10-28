@@ -1,4 +1,5 @@
 'use client'
+import { hasHairTools, hasNailTools, type Industry } from '@/lib/templates'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { useI18n } from '@/components/i18n'
@@ -30,7 +31,7 @@ const Field = ({ label, hint, children }: { label: string; hint?: string; childr
  */
 export function PrefCard({ shopId, customerId, initial, staff, nailColors, hairColors, industry, recentDesigns }: {
   shopId: string; customerId: string; initial: Preferences; staff: Staff[]; nailColors: ColorName[]; hairColors: HairOption[]
-  industry: 'nail' | 'barber' | 'both'; recentDesigns: NailDesign[]
+  industry: Industry; recentDesigns: NailDesign[]
 }) {
   const { t, lang } = useI18n()
   const router = useRouter()
@@ -40,8 +41,8 @@ export function PrefCard({ shopId, customerId, initial, staff, nailColors, hairC
   const [err, setErr] = useState<string | null>(null)
   const [pending, start] = useTransition()
   const dirty = JSON.stringify(cleanPrefs(v)) !== JSON.stringify(saved)
-  const nail = industry !== 'barber'
-  const hair = industry !== 'nail'
+  const nail = hasNailTools(industry)
+  const hair = hasHairTools(industry)
   // the shop's own nail colours first, then the built-in ones it has not overridden
   const colorOptions: ColorName[] = [...nailColors, ...DEFAULT_NAIL_COLORS.filter(d => !nailColors.some(c => c.hex.toUpperCase() === d.hex.toUpperCase()))]
   const colors = v.colors ?? []

@@ -1,4 +1,5 @@
 'use client'
+import { hasHairTools, hasNailTools } from '@/lib/templates'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useI18n } from '@/components/i18n'
@@ -71,7 +72,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
   // what this phone booked with last time (kept only on the device), offered as a one-tap repeat
   const [last, setLast] = useState<{ design: NailDesign | null; hairColor: { id: string; label: string; hex: string } | null }>({ design: null, hairColor: null })
   const designRef = useRef<HTMLDivElement>(null)
-  const canDesign = shop.industry !== 'barber'
+  const canDesign = hasNailTools(shop.industry)
   const [uploading, setUploading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -531,7 +532,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                   <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setHairColor(null)}>{t('bf.photoRemove')}</button>
                 </div>
               )}
-              {!hairColor && last.hairColor && shop.industry !== 'nail' && (
+              {!hairColor && last.hairColor && hasHairTools(shop.industry) && (
                 <div className="s-card flex items-center gap-3 p-3">
                   <span className="h-10 w-10 flex-none rounded-full border border-black/10" style={{ background: last.hairColor.hex }} />
                   <span className="min-w-0 flex-1"><b className="block text-[14px]">{t('pc.lastHair')}</b><span className="text-[13px] s-muted">{last.hairColor.label}</span></span>
