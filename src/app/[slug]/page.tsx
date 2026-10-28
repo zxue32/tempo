@@ -1,4 +1,4 @@
-import { hasNailTools } from '@/lib/templates'
+import { shopHasNailTools } from '@/lib/industries/shop'
 import Link from 'next/link'
 import { loadStorefront } from '@/lib/storefront'
 import { loadCatalog } from '@/lib/data/catalog'
@@ -153,7 +153,7 @@ export default async function Storefront(props: { params: Promise<{ slug: string
           </section>
         )}
 
-        {hasNailTools(shop.industry) && (
+        {shopHasNailTools(shop) && (
           <section aria-labelledby="design-h">
             {/* folded: a card that opens the 3D studio on its own page, so the shop page stays light */}
             <Link href={`/${shop.slug}/design`} className="group grid overflow-hidden no-underline sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"

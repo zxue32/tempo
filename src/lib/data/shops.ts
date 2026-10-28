@@ -4,20 +4,23 @@ import type { Shop, ShopStatus, Industry, Lang, Hours } from '../types'
 import { templateFor, defaultThemeFor } from '../templates'
 import { STAFF_COLORS } from '../themes'
 
+/** The shop's industries from `app.shop_industries`, primary first (CORE-02). */
+const industriesCol = () => sql`(select coalesce(array_agg(i.industry order by i.is_primary desc, i.industry), '{}') from app.shop_industries i where i.shop_id = s.id) as industries`
+
 export async function getShopBySlug(slug: string): Promise<Shop | null> {
-  const rows = await sql<Shop[]>`select * from app.shops where slug = ${slug.toLowerCase()}`
+  const rows = await sql<Shop[]>`select s.*, ${industriesCol()} from app.shops s where s.slug = ${slug.toLowerCase()}`
   return rows[0] ?? null
 }
 
 export async function getShop(id: string): Promise<Shop | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null
-  const rows = await sql<Shop[]>`select * from app.shops where id = ${id}`
+  const rows = await sql<Shop[]>`select s.*, ${industriesCol()} from app.shops s where s.id = ${id}`
   return rows[0] ?? null
 }
 
 export async function shopsForUser(userId: string) {
   return sql<(Shop & { role: 'owner' | 'manager' | 'staff' })[]>`
-    select s.*, m.role from app.shop_members m join app.shops s on s.id = m.shop_id
+    select s.*, ${industriesCol()}, m.role from app.shop_members m join app.shops s on s.id = m.shop_id
     where m.user_id = ${userId} order by s.created_at
   `
 }

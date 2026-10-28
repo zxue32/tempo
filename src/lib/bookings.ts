@@ -6,11 +6,14 @@ import { loadCatalog, type Catalog } from './data/catalog'
 import { buildDays } from './availability'
 import { findSlots, blocker, guestDuration, qualifies, guestResources, resourceConflict, type GuestRequest, type Assignment } from './engine'
 import { zonedToUtc, nowInZone, diffDays } from './tz'
+import { unbookableReason } from './industries/registry'
 
 export class BookingError extends Error {
   constructor(public code:
     | 'not_open' | 'invalid' | 'too_soon' | 'too_far' | 'taken' | 'limit' | 'blocked' | 'not_found'
-    | 'cutoff' | 'not_allowed' | 'service_gone' | 'outside_shift' | 'closed' | 'busy',
+    | 'cutoff' | 'not_allowed' | 'service_gone' | 'outside_shift' | 'closed' | 'busy'
+    /** the service belongs to an industry this shop can't take bookings for (CORE-02) */
+    | 'capability_disabled',
     public detail?: string) {
     super(code)
   }
@@ -72,6 +75,11 @@ function validateGuests(catalog: Catalog, guests: GuestRequest[], shop: Shop, mo
   for (const g of guests) {
     if (!g.serviceIds.length) throw new BookingError('invalid', 'no_service')
     if (new Set(g.serviceIds).size !== g.serviceIds.length || new Set(g.addonIds).size !== g.addonIds.length) throw new BookingError('invalid', 'dupe')
+    // the shop's industries decide what can be booked at all, whoever is booking (CORE-02)
+    for (const id of [...g.serviceIds, ...g.addonIds]) {
+      const s = byId.get(id)
+      if (catalog.disabled.has(id) || (s && unbookableReason(catalog.industries, s.industry))) throw new BookingError('capability_disabled')
+    }
     const cats = new Set<string>()
     for (const id of g.serviceIds) {
       const s = byId.get(id)

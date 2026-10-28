@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
-import { hasHairTools, hasNailTools } from '@/lib/templates'
+import { shopHasHairTools, shopHasNailTools } from '@/lib/industries/shop'
+import type { IndustryKey } from '@/lib/industries/registry'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useI18n } from '@/components/i18n'
@@ -15,7 +16,7 @@ import { designToPng, type SwatchOption } from '@/components/NailDesigner'
 import { readHandoff, clearHandoff, noteFromSummary } from '@/lib/lune'
 
 export type FlowShop = {
-  slug: string; industry: Industry; maxGuests: number; allowAnyStaff: boolean; maxDays: number; leadMinutes: number
+  slug: string; industry: Industry; industries: IndustryKey[]; maxGuests: number; allowAnyStaff: boolean; maxDays: number; leadMinutes: number
   cutoffMinutes: number; showPrices: boolean; live: boolean; note: string | null; phone: string | null; waitlist: boolean
 }
 export type FlowInitial = { services: string[]; addons: string[]; staff: string | null; date: string | null; look: { id: string; url: string } | null; design: NailDesign | null; hairColor: { id: string; label: string; hex: string } | null }
@@ -86,7 +87,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
     return () => { if (cardUrl) URL.revokeObjectURL(cardUrl) }
   }, [shop.slug])
   const dropDesign = () => { setDesign(null); setLune(null); clearHandoff() }
-  const canDesign = hasNailTools(shop.industry)
+  const canDesign = shopHasNailTools(shop)
   const [uploading, setUploading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -266,7 +267,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
       const code = data.error as string
       if (code === 'taken') { setNotice(t('bf.slotGone')); setSlot(null); goStep(2); load(windowStart, date); return }
       const msg: Record<string, string> = {
-        limit: t('bf.err.limit'), blocked: t('bf.err.blocked'), not_open: t('bf.err.not_open'), service_gone: t('bf.err.service_gone'),
+        limit: t('bf.err.limit'), blocked: t('bf.err.blocked'), not_open: t('bf.err.not_open'), service_gone: t('bf.err.service_gone'), capability_disabled: t('bf.err.capability_disabled'),
         blocked_noshow: t('bf.err.noshow', shop.phone || ''),
         rate: t('bf.err.rate'), too_soon: t('bf.err.too_soon', fmtDuration(shop.leadMinutes, lang)), too_far: t('bf.err.too_far', shop.maxDays),
       }
@@ -548,7 +549,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                   <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setHairColor(null)}>{t('bf.photoRemove')}</button>
                 </div>
               )}
-              {!hairColor && last.hairColor && hasHairTools(shop.industry) && (
+              {!hairColor && last.hairColor && shopHasHairTools(shop) && (
                 <div className="s-card flex items-center gap-3 p-3">
                   <span className="h-10 w-10 flex-none rounded-full border border-black/10" style={{ background: last.hairColor.hex }} />
                   <span className="min-w-0 flex-1"><b className="block text-[14px]">{t('pc.lastHair')}</b><span className="text-[13px] s-muted">{last.hairColor.label}</span></span>

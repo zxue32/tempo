@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireShop } from '@/lib/auth'
 import { getShop } from '@/lib/data/shops'
+import { shopHasHairTools, shopHasNailTools } from '@/lib/industries/shop'
 import { listStaff } from '@/lib/data/catalog'
 import { listPalette } from '@/lib/data/rules'
 import { getCustomer } from '@/lib/data/insights'
@@ -52,7 +53,7 @@ export default async function CustomerPage(props: PageProps<'/dashboard/[shopId]
             <h2 className="text-[17px] font-bold">{t('cu.details')}</h2>
             <CustomerForm shopId={shopId} customer={{ id: c.id, name: c.name, phone: c.phone ?? '', email: c.email ?? '', notes: c.notes ?? '', blocked: c.blocked }} />
           </section>
-          <PrefCard shopId={shopId} customerId={c.id} initial={c.preferences ?? {}} staff={staffList} nailColors={nailColors} hairColors={hairColors} industry={shop.industry} recentDesigns={recentDesigns} />
+          <PrefCard shopId={shopId} customerId={c.id} initial={c.preferences ?? {}} staff={staffList} nailColors={nailColors} hairColors={hairColors} tools={{ nail: shopHasNailTools(shop), hair: shopHasHairTools(shop) }} recentDesigns={recentDesigns} />
         </div>
         <section className="flex flex-col gap-3">
           <h2 className="text-[17px] font-bold">{t('cu.history')}</h2>

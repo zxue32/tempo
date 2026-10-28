@@ -1,6 +1,7 @@
 export type Lang = 'zh' | 'en'
 export type { Industry } from './templates'
 import type { Industry } from './templates'
+import type { IndustryKey } from './industries/registry'
 export type ShopStatus = 'draft' | 'pending' | 'changes' | 'live' | 'rejected' | 'suspended'
 export type DayHours = { closed: boolean; open: number; close: number }
 export type Hours = Record<string, DayHours>
@@ -10,7 +11,10 @@ export type Shop = {
   id: string
   slug: string
   status: ShopStatus
+  /** Legacy single value, still written by the settings form; mirrored into `app.shop_industries` (CORE-02). */
   industry: Industry
+  /** From `app.shop_industries`, primary first. Present on shop loads; read it through `shopIndustries()`. */
+  industries?: IndustryKey[]
   name: string
   nameZh: string | null
   aboutEn: string | null
@@ -121,6 +125,8 @@ export type Service = {
   resourceId: string | null
   questionEn: string | null
   questionZh: string | null
+  /** The industry this service belongs to (CORE-02). */
+  industry: IndustryKey
 }
 
 export type Resource = { id: string; shopId: string; name: string; nameZh: string | null; quantity: number; sort: number }

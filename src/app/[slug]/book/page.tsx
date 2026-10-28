@@ -1,4 +1,4 @@
-import { hasNailTools } from '@/lib/templates'
+import { shopHasNailTools, shopIndustries } from '@/lib/industries/shop'
 import { emailConfigured } from '@/lib/email'
 import { loadStorefront } from '@/lib/storefront'
 import { loadCatalog } from '@/lib/data/catalog'
@@ -29,7 +29,7 @@ export default async function BookPage(props: { params: Promise<{ slug: string }
   const catalog = await loadCatalog(shop.id, { forCustomers: true })
   const staff = catalog.staff.filter(s => s.active && s.bookableOnline)
   const flowShop: FlowShop = {
-    slug: shop.slug, industry: shop.industry, maxGuests: shop.maxGuests, allowAnyStaff: shop.allowAnyStaff, maxDays: shop.maxDays,
+    slug: shop.slug, industry: shop.industry, industries: shopIndustries(shop), maxGuests: shop.maxGuests, allowAnyStaff: shop.allowAnyStaff, maxDays: shop.maxDays,
     leadMinutes: shop.leadMinutes, cutoffMinutes: shop.cancelCutoffMinutes, showPrices: shop.showPrices, live: shop.status === 'live',
     note: pick(lang, shop.bookingNoteEn, shop.bookingNoteZh) || null, phone: shop.phone, waitlist: shop.waitlistEnabled,
   }
@@ -46,7 +46,7 @@ export default async function BookPage(props: { params: Promise<{ slug: string }
     date: isDateString(one(sp.date)) ? one(sp.date) : null, look: look ?? null, design,
     hairColor: hair ? { id: hair.id, label: pick(lang, hair.name, hair.nameZh) + (hair.code ? ` ${hair.code}` : ''), hex: hair.hex } : null,
   }
-  const nailColors = hasNailTools(shop.industry) ? await listPalette(shop.id, 'nail', true) : []
+  const nailColors = shopHasNailTools(shop) ? await listPalette(shop.id, 'nail', true) : []
   return (
     <div className="min-h-screen">
       {preview && shop.status !== 'live' && <PreviewBanner text={t('sf2.previewBanner')} />}

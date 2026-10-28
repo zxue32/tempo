@@ -1,5 +1,4 @@
 'use client'
-import { hasHairTools, hasNailTools, type Industry } from '@/lib/templates'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { useI18n } from '@/components/i18n'
@@ -29,9 +28,10 @@ const Field = ({ label, hint, children }: { label: string; hint?: string; childr
  * The client's preference card — big tap-able choices so the front desk can fill it in
  * between two customers. Everything is optional; only what is set shows up on the calendar.
  */
-export function PrefCard({ shopId, customerId, initial, staff, nailColors, hairColors, industry, recentDesigns }: {
+export function PrefCard({ shopId, customerId, initial, staff, nailColors, hairColors, tools, recentDesigns }: {
   shopId: string; customerId: string; initial: Preferences; staff: Staff[]; nailColors: ColorName[]; hairColors: HairOption[]
-  industry: Industry; recentDesigns: NailDesign[]
+  /** which colour boards the shop has (from its industries) */
+  tools: { nail: boolean; hair: boolean }; recentDesigns: NailDesign[]
 }) {
   const { t, lang } = useI18n()
   const router = useRouter()
@@ -41,8 +41,7 @@ export function PrefCard({ shopId, customerId, initial, staff, nailColors, hairC
   const [err, setErr] = useState<string | null>(null)
   const [pending, start] = useTransition()
   const dirty = JSON.stringify(cleanPrefs(v)) !== JSON.stringify(saved)
-  const nail = hasNailTools(industry)
-  const hair = hasHairTools(industry)
+  const { nail, hair } = tools
   // the shop's own nail colours first, then the built-in ones it has not overridden
   const colorOptions: ColorName[] = [...nailColors, ...DEFAULT_NAIL_COLORS.filter(d => !nailColors.some(c => c.hex.toUpperCase() === d.hex.toUpperCase()))]
   const colors = v.colors ?? []

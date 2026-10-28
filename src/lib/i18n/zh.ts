@@ -702,6 +702,7 @@ export const zh = {
   'bf.err.too_far': '只能预约 {0} 天以内。',
   'bf.err.not_open': '这家店暂时不接受在线预约。',
   'bf.err.service_gone': '有服务刚刚下架了，请重新选择。',
+  'bf.err.capability_disabled': '这家店暂时不能在线预约这项服务，请换一项或直接致电店铺。',
   'bf.err.rate': '操作太频繁了，请稍后再试。',
   'bf.err.invalid': '信息不完整，请检查后再试。',
   'bf.hp': '请不要填写这一项',

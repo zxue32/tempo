@@ -1,6 +1,8 @@
 import 'server-only'
 import { sql } from '../db'
 import type { Service, Staff, Skill, Break } from '../types'
+import { unbookableReason, type IndustryKey } from '../industries/registry'
+import { shopIndustries } from '../industries/shop'
 
 export async function listStaff(shopId: string, opts: { activeOnly?: boolean } = {}): Promise<Staff[]> {
   const rows = await sql<Staff[]>`
@@ -150,12 +152,27 @@ export async function reorderServices(shopId: string, ids: string[]) {
 }
 
 /** Everything the booking pages need about a shop's menu and team. */
+async function industriesOf(shopId: string): Promise<IndustryKey[]> {
+  const [row] = await sql<{ industry: string; industries: IndustryKey[] }[]>`
+    select s.industry, (select coalesce(array_agg(i.industry order by i.is_primary desc, i.industry), '{}') from app.shop_industries i where i.shop_id = s.id) as industries
+    from app.shops s where s.id = ${shopId}
+  `
+  return row ? shopIndustries(row) : []
+}
+
+/**
+ * The shop's menu, team and skills. For customers, services whose industry the shop can't take online bookings
+ * for are left out (their ids are in `disabled`, so the booking engine can say why instead of "removed").
+ */
 export async function loadCatalog(shopId: string, opts: { forCustomers?: boolean } = {}) {
-  const [services, staff, skills] = await Promise.all([
+  const [all, staff, skills, industries] = await Promise.all([
     listServices(shopId, { activeOnly: true, onlineOnly: opts.forCustomers }),
     listStaff(shopId, { activeOnly: true }),
     listSkills(shopId),
+    industriesOf(shopId),
   ])
-  return { services, staff, skills }
+  const disabled = new Set<string>()
+  const services = opts.forCustomers ? all.filter(s => (unbookableReason(industries, s.industry) ? (disabled.add(s.id), false) : true)) : all
+  return { services, staff, skills, industries, disabled }
 }
 export type Catalog = Awaited<ReturnType<typeof loadCatalog>>

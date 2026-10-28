@@ -703,6 +703,7 @@ export const en: Record<DictKey, string> = {
   'bf.err.too_far': 'You can book up to {0} days ahead.',
   'bf.err.not_open': 'This shop isn’t taking online bookings right now.',
   'bf.err.service_gone': 'A service you picked was just removed. Please choose again.',
+  'bf.err.capability_disabled': 'This shop can’t take online bookings for that service. Please pick another one or call the shop.',
   'bf.err.rate': 'Too many attempts. Please try again shortly.',
   'bf.err.invalid': 'Something is missing. Please check and try again.',
   'bf.hp': 'Leave this empty',
