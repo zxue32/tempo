@@ -11,17 +11,17 @@ export default async function ResetWithToken(props: PageProps<'/reset/[token]'>)
   const { t } = await getT()
   const acct = await resetTokenAccount(token)
   return (
-    <div className="card p-6 sm:p-8">
-      <h1 className="font-display mb-1 text-[28px] font-extrabold">{t('auth.resetTitle')}</h1>
+    <div className="ds-glass ds-glass-strong p-6 sm:p-8">
+      <h1 className="ds-display mb-2 text-[32px]">{t('auth.resetTitle')}</h1>
       {acct ? (
         <>
-          <p className="text-[14px] text-muted">{acct.email}</p>
+          <p className="text-[14.5px] ds-muted">{acct.email}</p>
           <div className="mt-5"><AuthForm mode="password" action={setNewPasswordAction.bind(null, token)} /></div>
         </>
       ) : (
         <>
-          <p className="err mt-2">{t('auth.callbackError')}</p>
-          <p className="mt-6 text-sm"><Link className="font-semibold text-accent" href="/reset">{t('auth.sendReset')}</Link></p>
+          <p className="ds-error mt-2">{t('auth.callbackError')}</p>
+          <p className="mt-6 text-sm"><Link className="ds-link" href="/reset">{t('auth.sendReset')}</Link></p>
         </>
       )}
     </div>

@@ -14,7 +14,7 @@ export default async function PasswordPage() {
       <main className="mx-auto max-w-md px-4 pt-10">
         <div className="card p-6 sm:p-8">
           <h1 className="font-display mb-4 text-[28px] font-extrabold">{t('auth.changeTitle')}</h1>
-          <AuthForm mode="change" action={updatePasswordAction} />
+          <AuthForm mode="change" action={updatePasswordAction} look="plain" />
           <p className="mt-6 text-sm"><Link className="font-semibold text-accent" href="/dashboard">{t('home.dashboard')}</Link></p>
         </div>
       </main>

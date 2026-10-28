@@ -12,11 +12,11 @@ export default async function Login(props: PageProps<'/login'>) {
   const { t } = await getT()
   const next = safeNext(sp.next)
   return (
-    <div className="card p-6 sm:p-8">
-      <h1 className="font-display mb-1 text-[28px] font-extrabold">{devAuthEnabled() ? t('auth.devTitle') : t('auth.loginTitle')}</h1>
-      {sp.error === 'callback' && <p className="err mb-3">{t('auth.callbackError')}</p>}
+    <div className="ds-glass ds-glass-strong p-6 sm:p-8">
+      <h1 className="ds-display mb-2 text-[32px]">{devAuthEnabled() ? t('auth.devTitle') : t('auth.loginTitle')}</h1>
+      {sp.error === 'callback' && <p className="ds-error mb-3">{t('auth.callbackError')}</p>}
       <div className="mt-4"><AuthForm mode="login" action={loginAction} next={next} dev={devAuthEnabled()} /></div>
-      <p className="mt-6 text-sm text-muted">{t('auth.noAccount')} <Link className="font-semibold text-accent" href={`/signup?next=${encodeURIComponent(next === '/dashboard' ? '/onboarding' : next)}`}>{t('auth.signup')}</Link></p>
+      <p className="mt-6 text-[14px] ds-muted">{t('auth.noAccount')} <Link className="ds-link" href={`/signup?next=${encodeURIComponent(next === '/dashboard' ? '/onboarding' : next)}`}>{t('auth.signup')}</Link></p>
     </div>
   )
 }
