@@ -147,7 +147,7 @@ export function templateFor(industry: Industry): TemplateService[] {
 }
 
 const THEME_FOR: Record<Industry, string> = {
-  nail: 'lacquer', hair: 'clean', barber: 'brass', spa: 'sage', beauty: 'lacquer', tattoo: 'brass', pet: 'sage', pilates: 'sage', fitness: 'clean', both: 'clean', other: 'clean',
+  nail: 'lacquer', hair: 'mist', barber: 'brass', spa: 'sage', beauty: 'bordeaux', tattoo: 'tangerine', pet: 'forest', pilates: 'matcha', fitness: 'klein', both: 'clean', other: 'clean',
 }
 export function defaultThemeFor(industry: Industry): string {
   return THEME_FOR[industry] ?? 'clean'

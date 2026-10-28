@@ -10,3 +10,14 @@
 # No version pin: Netlify installs the current release on each build.
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+# The 3D studio's hand model (9 MB) and script: let browsers keep them for a week instead of
+# downloading them again on every visit. Replace the files under a new name when they change.
+[[headers]]
+  for = "/models/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
+[[headers]]
+  for = "/vendor/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"

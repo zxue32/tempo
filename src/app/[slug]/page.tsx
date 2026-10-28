@@ -8,9 +8,7 @@ import { nowInZone, weekday, fmtTime, fmtDuration, fmtDate, addDays } from '@/li
 import { StoreHeader, PreviewBanner, Initial } from '@/components/store'
 import { money } from '@/components/ui'
 import { env } from '@/lib/env'
-import { themeOf } from '@/lib/themes'
 import { listGallery, listPalette } from '@/lib/data/rules'
-import { StoreDesigner } from '@/components/StoreDesigner'
 import { HairPalette } from '@/components/HairPalette'
 import { looksFrom } from '@/lib/looks'
 import { StoreGallery } from '@/components/StoreGallery'
@@ -36,9 +34,7 @@ export default async function Storefront(props: { params: Promise<{ slug: string
     )
   }
 
-  const theme = themeOf(shop.theme)
   const [{ services, staff, skills }, gallery, palette] = await Promise.all([loadCatalog(shop.id, { forCustomers: true }), listGallery(shop.id), listPalette(shop.id, undefined, true)])
-  const nailColors = palette.filter(c => c.kind === 'nail')
   const hairColors = palette.filter(c => c.kind === 'hair')
   const looks = looksFrom(gallery, staff, services, lang)
   const withWork = new Set(looks.map(l => l.staffId).filter(Boolean))
@@ -78,9 +74,12 @@ export default async function Storefront(props: { params: Promise<{ slug: string
             // eslint-disable-next-line @next/next/no-img-element
             <img src={shop.coverUrl} alt="" className="aspect-[16/9] w-full object-cover sm:aspect-[21/9]" style={{ borderRadius: 'var(--s-rs)' }} />
           ) : (
-            <div aria-hidden="true" className="aspect-[21/9] w-full" style={{ borderRadius: 'var(--s-rs)', background: theme.dark
-              ? 'repeating-linear-gradient(160deg, #B8382B 0 14px, #F0E8D9 14px 28px, #2B4A7A 28px 42px, #F0E8D9 42px 56px)'
-              : `repeating-linear-gradient(100deg, var(--s-soft) 0 26px, color-mix(in srgb, var(--s-accent) 22%, var(--s-bg)) 26px 52px)` }} />
+            // no cover photo yet: a colour-block composition in the shop's theme (block field, soft panel, pop disc)
+            <div aria-hidden="true" className="relative aspect-[21/9] w-full overflow-hidden" style={{ borderRadius: 'var(--s-rs)', background: 'var(--s-soft)' }}>
+              <span className="absolute inset-y-0 left-0 w-[62%]" style={{ background: 'var(--s-block)' }} />
+              <span className="absolute aspect-square w-[34%] rounded-full" style={{ left: '50%', bottom: '-38%', background: 'var(--s-pop)' }} />
+              <span className="absolute right-[7%] top-[16%] h-[18%] w-[16%]" style={{ background: 'var(--s-accent)', borderRadius: 'var(--s-r)' }} />
+            </div>
           )}
           <div className="flex flex-col gap-2">
             <h1 className="s-display text-[38px] leading-[1.02] sm:text-[48px]">{name}</h1>
@@ -155,13 +154,19 @@ export default async function Storefront(props: { params: Promise<{ slug: string
         )}
 
         {hasNailTools(shop.industry) && (
-          <section aria-labelledby="design-h" className="flex flex-col gap-4">
-            <div>
-              <h2 id="design-h" className="s-display text-[26px]">{t('nd.title')}</h2>
-              <p className="text-[14px] s-muted">{t('nd.sub')}</p>
-            </div>
-            <StoreDesigner slug={shop.slug} swatches={nailColors.map(c => ({ hex: c.hex, name: c.name, nameZh: c.nameZh, code: c.code }))}
-              serviceId={main.find(s => s.category === 'hand')?.id ?? null} />
+          <section aria-labelledby="design-h">
+            {/* folded: a card that opens the 3D studio on its own page, so the shop page stays light */}
+            <Link href={`/${shop.slug}/design`} className="group grid overflow-hidden no-underline sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"
+              style={{ background: 'var(--s-block)', color: 'var(--s-block-ink)', borderRadius: 'var(--s-rs)' }}>
+              <div className="flex flex-col justify-center gap-3 p-6 sm:p-8">
+                <span className="text-[12px] tracking-[0.18em] opacity-70">3D · {t("nd.title")}</span>
+                <h2 id="design-h" className="s-display text-[28px] leading-tight">{t('lu.teaserT')}</h2>
+                <p className="text-[14px] leading-relaxed opacity-80">{t('lu.teaserD')}</p>
+                <span className="s-btn mt-2 self-start transition-transform group-hover:translate-x-1" style={{ background: 'var(--s-pop)', borderColor: 'var(--s-pop)', color: 'var(--s-pop-ink)' }}>{t('lu.open')} →</span>
+              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/landing/lune-hand.jpg" alt="" className="h-full max-h-[340px] min-h-[220px] w-full object-cover" loading="lazy" />
+            </Link>
           </section>
         )}
 

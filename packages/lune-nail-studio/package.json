@@ -1,0 +1,45 @@
+{
+  "name": "@lune/nail-studio",
+  "version": "1.2.1",
+  "private": true,
+  "type": "module",
+  "description": "Embeddable 3D nail design studio with local drawing and salon handoff",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build && vite build --config vite.demo.config.ts",
+    "preview": "vite preview --outDir demo-dist --host 127.0.0.1",
+    "model:export": "node --import tsx scripts/export-reference.ts",
+    "asset:prepare": "node scripts/prepare-tripo.mjs",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "exports": {
+    ".": "./dist/lune-nail-studio.js"
+  },
+  "files": [
+    "dist",
+    "public/models/tripo-hand.glb",
+    "public/models/tripo-asset-report.json",
+    "src",
+    "examples",
+    "README.md",
+    "CLAUDE_HANDOFF.md"
+  ],
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "4.2.1",
+    "@gltf-transform/extensions": "4.2.1",
+    "@gltf-transform/functions": "4.2.1",
+    "@types/node": "22.20.5",
+    "@types/three": "0.180.0",
+    "meshoptimizer": "0.23.0",
+    "sharp": "0.34.5",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vite": "6.4.1"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

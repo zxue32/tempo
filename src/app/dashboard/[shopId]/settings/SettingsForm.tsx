@@ -93,9 +93,15 @@ export function SettingsForm({ shop, siteUrl }: { shop: Shop; siteUrl: string })
           {Object.values(THEMES).map(th => (
             <button key={th.id} type="button" role="radio" aria-checked={v.theme === th.id} onClick={() => f('theme', th.id)}
               className={`overflow-hidden rounded-xl border text-left ${v.theme === th.id ? 'border-accent shadow-[0_0_0_3px_var(--color-accent-soft)]' : 'border-line'}`}>
-              <span className="flex h-20 flex-col justify-between p-3" style={{ background: th.bg, color: th.ink, borderBottom: `1px solid ${th.line}` }}>
-                <span style={{ fontFamily: th.display, textTransform: th.displayCase, fontSize: 24, lineHeight: 1 }}>Aa</span>
-                <span className="block h-3 w-3/5" style={{ background: v.theme === th.id && v.accent ? v.accent : th.accent, borderRadius: th.radius }} />
+              {/* the theme as a colour block: ground, block field, pop disc, button colour */}
+              <span className="relative flex h-24 overflow-hidden" style={{ background: th.bg, color: th.ink, borderBottom: `1px solid ${th.line}` }}>
+                <span className="flex flex-1 flex-col justify-between p-3">
+                  <span style={{ fontFamily: th.display, textTransform: th.displayCase, fontSize: 24, lineHeight: 1 }}>Aa</span>
+                  <span className="block h-3 w-4/5" style={{ background: v.theme === th.id && v.accent ? v.accent : th.accent, borderRadius: th.radius }} />
+                </span>
+                <span className="relative w-[42%]" style={{ background: th.block }}>
+                  <span className="absolute -bottom-4 -left-4 h-10 w-10 rounded-full" style={{ background: th.pop }} />
+                </span>
               </span>
               <span className="block bg-surface px-3 py-2"><b className="block text-[14px]">{th.label[lang]}</b><span className="text-[12px] text-muted">{th.note[lang]}</span></span>
             </button>

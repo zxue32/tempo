@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { hasHairTools, hasNailTools } from '@/lib/templates'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -10,7 +11,8 @@ import { downscale } from '@/components/downscale'
 import { track, visitId } from '@/components/track'
 import type { NailDesign } from '@/lib/types'
 import { NailArt, describeDesign, isNailDesign } from '@/components/NailArt'
-import { NailDesigner, designToPng, type SwatchOption } from '@/components/NailDesigner'
+import { designToPng, type SwatchOption } from '@/components/NailDesigner'
+import { readHandoff, clearHandoff, noteFromSummary } from '@/lib/lune'
 
 export type FlowShop = {
   slug: string; industry: Industry; maxGuests: number; allowAnyStaff: boolean; maxDays: number; leadMinutes: number
@@ -68,10 +70,22 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
   const [photo, setPhoto] = useState<string | null>(initial.look?.url ?? null)
   const [design, setDesign] = useState<NailDesign | null>(initial.design)
   const [hairColor, setHairColor] = useState(initial.hairColor)
-  const [draft, setDraft] = useState<NailDesign | null>(null)   // while the designer dialog is open
   // what this phone booked with last time (kept only on the device), offered as a one-tap repeat
   const [last, setLast] = useState<{ design: NailDesign | null; hairColor: { id: string; label: string; hex: string } | null }>({ design: null, hairColor: null })
   const designRef = useRef<HTMLDivElement>(null)
+  // a design brought over from the 3D studio: its card picture and the technician's note
+  const [lune, setLune] = useState<{ name: string; summary: string; card: Blob | null; cardUrl: string | null } | null>(null)
+  const studioHref = `/${shop.slug}/design${guests[0]?.serviceIds[0] ? `?service=${guests[0].serviceIds[0]}` : ''}`
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has('from')) return
+    const h = readHandoff(shop.slug)
+    if (!h) return
+    const cardUrl = h.card ? URL.createObjectURL(h.card) : null
+    setDesign(h.design)
+    setLune({ name: h.name, summary: h.summary, card: h.card, cardUrl })
+    return () => { if (cardUrl) URL.revokeObjectURL(cardUrl) }
+  }, [shop.slug])
+  const dropDesign = () => { setDesign(null); setLune(null); clearHandoff() }
   const canDesign = hasNailTools(shop.industry)
   const [uploading, setUploading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -218,11 +232,11 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
     try {
       let photoUrl = lookId ? null : photo
       if (design && !photoUrl) {
-        // turn the design into a picture so the technician sees it like any reference photo
+        // the 3D studio's design card, or else a picture of the design, so the technician sees it like any reference photo
         const svg = designRef.current?.querySelector('svg')
-        if (svg) {
+        if (lune?.card || svg) {
           try {
-            const png = await designToPng(svg)
+            const png = lune?.card ?? await designToPng(svg!)
             const fd = new FormData(); fd.append('file', png, 'design.png')
             const up = await fetch(`/api/public/${shop.slug}/upload`, { method: 'POST', body: fd })
             const upData = await up.json().catch(() => ({}))
@@ -235,7 +249,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
         body: JSON.stringify({
           guests: guests.map(({ serviceIds, addonIds, staffId }) => ({ serviceIds, addonIds, staffId })), date, start: slot.start,
           name: form.name.trim(), phone: form.phone.trim(), email: form.email.trim(),
-          notes: [form.notes.trim(), design ? `${t('nd.yourDesign')}: ${describeDesign(design, t as (k: string) => string)}` : '', hairColor ? `${t('hc.chosen')}: ${hairColor.label}` : ''].filter(Boolean).join('\n'),
+          notes: [form.notes.trim(), lune ? `${t('lu.from3d')}「${lune.name}」: ${noteFromSummary(lune.summary)}` : design ? `${t('nd.yourDesign')}: ${describeDesign(design, t as (k: string) => string)}` : '', hairColor ? `${t('hc.chosen')}: ${hairColor.label}` : ''].filter(Boolean).join('\n').slice(0, 1000),
           photoUrl, lookId: photoUrl ? null : lookId, lang, website: form.website, session: visitId(), design,
         }),
       })
@@ -244,6 +258,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
         try {
           localStorage.setItem('tempo.contact', JSON.stringify({ name: form.name.trim(), phone: form.phone.trim(), email: form.email.trim() }))
           if (design || hairColor) localStorage.setItem('tempo.last', JSON.stringify({ shop: shop.slug, design, hairColor }))
+          clearHandoff()
         } catch { /* ignore */ }
         router.push(`/b/${data.token}?new=1`)
         return
@@ -301,8 +316,9 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
       )}
       {design && (
         <div className="flex items-center gap-3 border-t pt-2 text-[13px] s-line">
-          <NailArt design={design} size={84} uid="sum" />
-          <span className="min-w-0"><b className="block">{t('nd.yourDesign')}</b><span className="s-muted">{describeDesign(design, t as (k: string) => string)}</span></span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {lune?.cardUrl ? <img src={lune.cardUrl} alt={t('lu.cardAlt')} className="h-[84px] w-[84px] flex-none rounded-lg object-cover" /> : <NailArt design={design} size={84} uid="sum" />}
+          <span className="min-w-0"><b className="block">{t('nd.yourDesign')}</b><span className="s-muted">{lune ? lune.name : describeDesign(design, t as (k: string) => string)}</span></span>
         </div>
       )}
       {date && slot && (
@@ -546,13 +562,19 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                     {design && <span className="text-[12.5px] s-muted">{t('nd.attached')}</span>}
                   </div>
                   {design ? (
-                    <div className="flex flex-wrap items-center gap-4">
-                      <NailArt design={design} size={150} uid="bf" />
-                      <div className="flex min-w-0 flex-col gap-2">
-                        <span className="text-[13.5px]">{describeDesign(design, t as (k: string) => string)}</span>
+                    <div className="flex flex-wrap items-start gap-4">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {lune?.cardUrl ? <img src={lune.cardUrl} alt={t('lu.cardAlt')} className="w-[180px] max-w-full flex-none rounded-xl object-cover" /> : <NailArt design={design} size={150} uid="bf" />}
+                      <div className="flex min-w-0 flex-1 flex-col gap-2">
+                        {lune ? (
+                          <>
+                            <b className="text-[14px]">{t('lu.from3d')} · {lune.name}</b>
+                            <span className="whitespace-pre-line text-[13px] s-muted">{lune.summary}</span>
+                          </>
+                        ) : <span className="text-[13.5px]">{describeDesign(design, t as (k: string) => string)}</span>}
                         <div className="flex flex-wrap gap-2">
-                          <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setDraft(design)}>{t('nd.change')}</button>
-                          <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setDesign(null)}>{t('nd.remove')}</button>
+                          <Link href={studioHref} className="s-btn s-btn-ghost s-btn-sm">{t('nd.change')}</Link>
+                          <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={dropDesign}>{t('nd.remove')}</button>
                         </div>
                       </div>
                     </div>
@@ -563,21 +585,17 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                         <span className="text-[13.5px]"><b>{t('pc.lastDesign')}</b> · {describeDesign(last.design, t as (k: string) => string)}</span>
                         <div className="flex flex-wrap gap-2">
                           <button type="button" className="s-btn s-btn-sm" onClick={() => setDesign(last.design)}>{t('pc.useLast')}</button>
-                          <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setDraft({ ...last.design! })}>{t('nd.change')}</button>
-                          <button type="button" className="s-btn s-btn-ghost s-btn-sm" onClick={() => setDraft({ shape: 'almond', length: 'medium', color: swatches[0]?.hex ?? '#E8B4B8', color2: '#F7F3EE', finish: 'glossy', art: 'plain', colorName: swatches[0] ? swatches[0].name : null })}>{t('pc.newDesign')}</button>
+                          <Link href={studioHref} className="s-btn s-btn-ghost s-btn-sm">{t('lu.open')}</Link>
                         </div>
                       </div>
                     </div>
                   ) : (
                     <div className="flex flex-wrap items-center gap-3">
-                      <p className="min-w-0 flex-1 text-[13.5px] s-muted">{t('nd.sub')}</p>
-                      <button type="button" className="s-btn s-btn-sm" onClick={() => setDraft({ shape: 'almond', length: 'medium', color: swatches[0]?.hex ?? '#E8B4B8', color2: '#F7F3EE', finish: 'glossy', art: 'plain', colorName: swatches[0] ? swatches[0].name : null })}>{t('nd.openInBooking')}</button>
+                      <p className="min-w-0 flex-1 text-[13.5px] s-muted">{t('lu.teaserD')}</p>
+                      <Link href={studioHref} className="s-btn s-btn-sm">{t('lu.open')}</Link>
                     </div>
                   )}
                 </div>
-              )}
-              {draft && (
-                <DesignDialog value={draft} swatches={swatches} onCancel={() => setDraft(null)} onDone={d => { setDesign(d); setDraft(null) }} />
               )}
               <div>
                 <span className="s-lbl">{t('bf.photo')} ({t('c.optional')})</span>
@@ -708,25 +726,3 @@ function Waitlist({ slug, date, guest, contact, onContact, prominent }: {
   )
 }
 
-
-function DesignDialog({ value, swatches, onCancel, onDone }: { value: NailDesign; swatches: SwatchOption[]; onCancel: () => void; onDone: (d: NailDesign) => void }) {
-  const { t } = useI18n()
-  const [d, setD] = useState<NailDesign>(value)
-  const ref = useRef<HTMLDialogElement>(null)
-  useEffect(() => { const el = ref.current; if (el && !el.open) el.showModal() }, [])
-  return (
-    <dialog ref={ref} onClose={onCancel} className="m-auto max-h-[94vh] w-[min(96vw,900px)] overflow-y-auto p-0 backdrop:bg-black/60" style={{ background: 'var(--s-bg)', color: 'var(--s-ink)', borderRadius: 'var(--s-rs)' }}>
-      <div className="flex flex-col gap-4 p-4 sm:p-6">
-        <div className="flex items-start justify-between gap-3">
-          <div><h2 className="s-display text-[26px]">{t('nd.title')}</h2><p className="text-[13.5px] s-muted">{t('nd.sub')}</p></div>
-          <button type="button" aria-label={t('c.close')} onClick={onCancel} className="grid h-9 w-9 flex-none place-items-center rounded-full text-[18px]" style={{ background: 'var(--s-sunk)' }}>×</button>
-        </div>
-        <NailDesigner value={d} onChange={setD} swatches={swatches} />
-        <div className="sticky bottom-0 -mx-4 -mb-4 flex gap-2 border-t p-4 s-line sm:-mx-6 sm:-mb-6 sm:p-6" style={{ background: 'var(--s-bg)' }}>
-          <button type="button" className="s-btn" onClick={() => onDone(d)}>{t('nd.useInBooking')}</button>
-          <button type="button" className="s-btn s-btn-ghost" onClick={onCancel}>{t('c.cancel')}</button>
-        </div>
-      </div>
-    </dialog>
-  )
-}
