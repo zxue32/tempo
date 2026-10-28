@@ -6,7 +6,7 @@ import { LuneStudio, type BookPayload, type StudioElement } from '@/components/L
 import { isLuneDesign, luneToNailDesign, saveHandoff } from '@/lib/lune'
 
 /** The 3D studio page: "book with this design" carries the design card and the technician's note into booking. */
-export function DesignStudio({ slug, brand, serviceId }: { slug: string; brand: string; serviceId: string | null }) {
+export function DesignStudio({ slug, brand, serviceId, vars }: { slug: string; brand: string; serviceId: string | null; vars: Record<string, string> }) {
   const { t } = useI18n()
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -20,8 +20,8 @@ export function DesignStudio({ slug, brand, serviceId }: { slug: string; brand: 
   }, [busy, router, serviceId, slug])
   return (
     <>
-      <LuneStudio storageKey={`tempo.lune:${slug}`} brand={brand} onBook={onBook} labels={{ loading: t('lu.loading'), failed: t('lu.failed') }} />
-      {busy && <p role="status" className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full px-5 py-3 text-[14px] text-white shadow-lg" style={{ background: 'var(--s-accent, #783c4a)' }}>{t('lu.taking')}</p>}
+      <LuneStudio storageKey={`tempo.lune:${slug}`} brand={brand} vars={vars} onBook={onBook} labels={{ loading: t('lu.loading'), failed: t('lu.failed') }} />
+      {busy && <p role="status" className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full px-5 py-3 text-[14px] shadow-lg" style={{ background: 'var(--s-accent, #783c4a)', color: 'var(--s-accent-ink, #fff)' }}>{t('lu.taking')}</p>}
     </>
   )
 }

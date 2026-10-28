@@ -5,6 +5,7 @@ import { loadCatalog } from '@/lib/data/catalog'
 import { makeT, pick } from '@/lib/i18n'
 import { StoreHeader, PreviewBanner } from '@/components/store'
 import { DesignStudio } from './DesignStudio'
+import { studioVars } from '@/lib/themes'
 
 export const metadata = { robots: { index: false } }
 
@@ -33,7 +34,7 @@ export default async function DesignPage(props: { params: Promise<{ slug: string
       <StoreHeader shop={shop} lang={lang} back={{ href: `/${shop.slug}`, label: t('c.back') }} />
       <main className="mx-auto max-w-[1440px] px-2 pb-10 pt-2 sm:px-4">
         <h1 className="sr-only">{t('lu.title')}</h1>
-        <DesignStudio slug={shop.slug} brand={pick(lang, shop.name, shop.nameZh)} serviceId={serviceId} />
+        <DesignStudio slug={shop.slug} brand={pick(lang, shop.name, shop.nameZh)} serviceId={serviceId} vars={studioVars(shop.theme, shop.accent)} />
         <p className="mx-auto mt-4 max-w-3xl px-2 text-center text-[13px] s-muted">{t('lu.note')}</p>
       </main>
     </div>

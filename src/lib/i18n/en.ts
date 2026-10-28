@@ -1039,6 +1039,7 @@ export const en: Record<DictKey, string> = {
   'lu.cardAlt': 'Your design card: the whole hand',
   'lu.tryNote': 'A demo of the 3D nail studio. Once your shop is open, clients design like this on your shop page and book with the design card.',
   'lp.tryIt': 'Try it yourself',
+  'lu.themes': 'Shop colours',
   'nd.title': 'Design your nails',
   'nd.sub': 'Tap to try shapes and colours. Book with the design and your technician sees it.',
   'nd.preview': 'Preview only; the real thing is up to the shop',

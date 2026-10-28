@@ -1,0 +1,15 @@
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+const root=resolve(import.meta.dirname,'..');
+let html=await readFile(resolve(root,'model-dist/model.html'),'utf8');
+const script=html.match(/<script type="module" crossorigin src="([^"]+)"><\/script>/);
+if(!script)throw new Error('Missing bundled viewer script');
+const js=await readFile(resolve(root,'model-dist',script[1]),'utf8');
+const model=(await readFile(resolve(root,'../hand-model/lune-reference-hand.glb'))).toString('base64');
+const photo=(await readFile(resolve(root,'public/models/reference.png'))).toString('base64');
+html=html.replace(script[0],`<script id="embedded-glb" type="application/octet-stream">${model}</script><script type="module">${js.replace(/<\/script/gi,'<\\/script')}</script>`);
+html=html.replace('src="./models/reference.png"',`src="data:image/png;base64,${photo}"`);
+html=html.replace('href="./models/lune-reference-hand.glb"',`href="data:model/gltf-binary;base64,${model}"`);
+html=html.replace('<a class="secondary" href="./index.html">进入美甲 DIY 工作室 ↗</a>','<p class="secondary">离线预览 · 模型与纹理已内嵌</p>');
+await writeFile(resolve(root,'../hand-model/打开预览.html'),html);
+console.log('Standalone viewer written: ../hand-model/打开预览.html');
