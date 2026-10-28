@@ -17,16 +17,22 @@ export function SceneCanvas({ trade, stage, slots, poster = '/landing/poster.jpg
     let ok = false
     try { const c = document.createElement('canvas'); ok = !!(c.getContext('webgl2') || c.getContext('webgl')) } catch { ok = false }
     if (!ok) { setMode('still'); return }
-    import('./scene').then(m => {
+    // let the page paint and settle first: the 3D is decoration, the words and buttons come first
+    const start = () => import('./scene').then(m => {
       if (dead || !host.current) return
-      const h = m.createScene(host.current, { trade: latest.current.trade, calm, small, onFail: () => setMode('still') })
+      const h = m.createScene(host.current, { trade: latest.current.trade, calm, small, onFail: () => setMode('still'), onReady: () => { if (!dead) setMode('live') } })
       if (!h) { setMode('still'); return }
       handle.current = h
       h.setStage(latest.current.stage)
       if (latest.current.slots) h.setSlots(latest.current.slots)
-      setMode('live')
     }).catch(() => setMode('still'))
-    return () => { dead = true; handle.current?.dispose(); handle.current = null }
+    const idle = typeof window.requestIdleCallback === 'function'   // Safari only recently got it
+    const timer = idle ? window.requestIdleCallback(() => { start() }, { timeout: 1200 }) : window.setTimeout(() => { start() }, 300)
+    return () => {
+      dead = true
+      if (idle) window.cancelIdleCallback(timer); else window.clearTimeout(timer)
+      handle.current?.dispose(); handle.current = null
+    }
   }, [])
   useEffect(() => { handle.current?.setTrade(trade) }, [trade])
   useEffect(() => { handle.current?.setStage(stage) }, [stage])

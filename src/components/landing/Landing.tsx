@@ -132,7 +132,7 @@ export function Landing({ loggedIn, platform }: { loggedIn: boolean; platform: s
         {/* ---------- the trade, in light */}
         <section aria-labelledby="hero-h" className="relative mx-auto grid min-h-[calc(100svh-72px)] max-w-7xl grid-cols-1 items-center gap-8 px-4 pb-16 pt-6 sm:px-6 md:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] md:pt-10">
           <div className="order-2 flex min-w-0 flex-col gap-6 md:order-1">
-            <Reveal className="order-2 min-w-0 md:order-1">
+            <div className="ds-rise order-2 min-w-0 md:order-1" style={{ ['--d' as string]: '0.05s' }}>
               {/* one swipeable row on a phone, wrapped on wider screens */}
               <div ref={pickRef} role="radiogroup" aria-label={t('lp.picker')}
                 className="ds-chip-row -mx-4 flex items-center gap-2 overflow-x-auto px-4 py-1.5 sm:-mx-6 sm:px-6 md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
@@ -144,20 +144,20 @@ export function Landing({ loggedIn, platform }: { loggedIn: boolean; platform: s
                   </button>
                 ))}
               </div>
-            </Reveal>
-            <Reveal delay={0.08} className="order-1 md:order-2">
+            </div>
+            <div className="ds-rise order-1 md:order-2">
               <h1 id="hero-h" className="ds-display text-[clamp(40px,6.2vw,84px)]">{t('home.title')}</h1>
-            </Reveal>
-            <Reveal delay={0.16} className="order-3">
+            </div>
+            <div className="ds-rise order-3" style={{ ['--d' as string]: '0.12s' }}>
               <p className="ds-lead max-w-[36em]">{tx('lp.sub', platform, staffWord)}</p>
-            </Reveal>
-            <Reveal delay={0.24} className="order-4">
+            </div>
+            <div className="ds-rise order-4" style={{ ['--d' as string]: '0.2s' }}>
               <div className="flex flex-wrap items-center gap-3">
                 <Button href={start} variant="primary" size="lg" magnetic>{t('home.cta')}</Button>
                 {!loggedIn && <Button href="/login" variant="glass" size="lg">{t('home.login')}</Button>}
               </div>
-            </Reveal>
-            <Reveal delay={0.3} className="order-5"><p className="text-[14px] ds-muted">{t('home.note')}</p></Reveal>
+            </div>
+            <div className="ds-rise order-5" style={{ ['--d' as string]: '0.28s' }}><p className="text-[14px] ds-muted">{t('home.note')}</p></div>
           </div>
           <div ref={artRef} className="relative order-1 h-[30svh] min-h-[220px] md:order-2 md:h-[70svh]">
             <motion.div key={trade} initial={calm ? false : { opacity: 0, y: 12, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', stiffness: 180, damping: 18 }}

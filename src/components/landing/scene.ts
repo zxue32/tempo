@@ -71,7 +71,7 @@ function studio(pmrem: THREE.PMREMGenerator) {
   panel(0xff8fc8, 3.2, 7, 10, 9, -1, 2)     // rose from the right
   panel(0xe9cfa0, 2.6, 12, 3, 0, -8, 4)     // gold bounce from below
   panel(0xffffff, 3, 4, 4, 4, 3, 10)        // key in front, for the sparkle
-  const tex = pmrem.fromScene(room, 0.03).texture
+  const tex = pmrem.fromScene(room, 0.03, 0.1, 100, { size: 128 }).texture   // small gems: a small reflection map is plenty
   disposables.forEach(d => d.dispose())
   return tex
 }
@@ -86,7 +86,7 @@ const GEMS_AT: Record<'heroWide' | 'heroTall' | 'ringWide' | 'ringTall', Anchor[
   ringTall: [[-0.86, 0.72, -3, 0.8], [0.86, 0.56, -4.5, 0.7], [-0.82, -0.72, -2, 0.9], [0.84, -0.62, -5, 0.7]],
 }
 
-export function createScene(host: HTMLElement, opts: { trade: Trade; calm: boolean; small: boolean; onFail?: () => void }): SceneHandle | null {
+export function createScene(host: HTMLElement, opts: { trade: Trade; calm: boolean; small: boolean; onFail?: () => void; onReady?: () => void }): SceneHandle | null {
   let renderer: THREE.WebGLRenderer
   try {
     renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' })
@@ -224,7 +224,7 @@ export function createScene(host: HTMLElement, opts: { trade: Trade; calm: boole
   }
 
   // ---------- loop
-  let raf = 0, running = true, last = performance.now(), visible = true
+  let raf = 0, running = true, last = performance.now(), visible = true, ready = false
   const clock = { t: 0 }
   function frame(now: number) {
     raf = 0
@@ -262,7 +262,7 @@ export function createScene(host: HTMLElement, opts: { trade: Trade; calm: boole
     const busy = uni.uMix.value < mixT || uni.uColMix.value < colT || Math.abs(target.x - sculpt.position.x) > 0.002 || Math.abs(target.y - sculpt.position.y) > 0.002 || pointer.distanceTo(pointerT) > 0.001 || Math.abs(gemFadeT - gemFade) > 0.01
     if (running && visible && (!opts.calm || busy)) raf = requestAnimationFrame(frame)
   }
-  function kick() { if (!raf && running && visible) { last = performance.now(); raf = requestAnimationFrame(frame) } }
+  function kick() { if (!raf && running && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame) } }
 
   const onPointer = (e: PointerEvent) => { if (opts.calm) return; pointerT.set((e.clientX / window.innerWidth) * 2 - 1, -((e.clientY / window.innerHeight) * 2 - 1)); kick() }
   const onResize = () => layout()
@@ -276,7 +276,14 @@ export function createScene(host: HTMLElement, opts: { trade: Trade; calm: boole
   document.addEventListener('visibilitychange', onVis)
   renderer.domElement.addEventListener('webglcontextlost', onLost)
   layout()
-  kick()
+  // compile the shaders off the main thread where the browser can, so the page stays responsive; the still image
+  // stays up until the first real frame is ready
+  renderer.compileAsync(scene, camera).catch(() => {}).then(() => {
+    if (!running) return
+    ready = true
+    kick()
+    opts.onReady?.()
+  })
 
   return {
     setTrade(t) { if (t === trade) return; trade = t; recolor(t); if (stage === 'hero') morph(t); kick() },

@@ -83,6 +83,9 @@
 }
 .ds-glass-strong { background: var(--ds-glass-strong); }
 .ds-breathe { animation: ds-float 7s ease-in-out infinite; }
+/* above-the-fold entrance: pure CSS, so it plays even while scripts are busy, and the words are there without JS */
+@keyframes ds-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+.ds-rise { animation: ds-rise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: var(--d, 0s); }
 @keyframes ds-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 
 /* ---------- type */
