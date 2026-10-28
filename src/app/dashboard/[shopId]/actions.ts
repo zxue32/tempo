@@ -1,4 +1,5 @@
 'use server'
+import { INDUSTRIES } from '@/lib/templates'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { randomBytes } from 'node:crypto'
@@ -375,7 +376,7 @@ const settingsSchema = z.object({
   bookingNoteZh: z.string().trim().max(1000).nullable(),
   notifyEmails: z.array(z.string().regex(emailRe)).max(10),
   notifyStaff: z.boolean(),
-  industry: z.enum(['nail', 'barber', 'both']),
+  industry: z.enum(INDUSTRIES),
   walkinReserve: z.number().int().min(0).max(50),
   assignMode: z.enum(['balanced', 'turns']),
   turnsCountRequests: z.boolean(),

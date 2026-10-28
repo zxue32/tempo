@@ -3,69 +3,85 @@ import { useActionState } from 'react'
 import Link from 'next/link'
 import { useI18n } from './i18n'
 import type { AuthState } from '@/app/(auth)/actions'
+import { Button, Notice, PasswordField, TextField } from './ds'
 
 type Mode = 'login' | 'signup' | 'reset' | 'password' | 'change'
 
-export function AuthForm({ mode, action, next, dev, defaultEmail, invite }: {
+/** Sign-in, sign-up and password forms. `look="ds"` (default) is the deep-space look of the sign-in pages;
+    `look="plain"` keeps the dashboard look for the account page. */
+export function AuthForm({ mode, action, next, dev, defaultEmail, invite, look = 'ds' }: {
   mode: Mode
   action: (s: AuthState, f: FormData) => Promise<AuthState>
   next?: string
   dev?: boolean
   defaultEmail?: string
   invite?: string
+  look?: 'ds' | 'plain'
 }) {
   const { t } = useI18n()
   const [state, run, pending] = useActionState(action, null)
   const done = state?.info && (mode === 'signup' || mode === 'reset')
   const submit = { login: 'auth.login', signup: 'auth.signup', reset: 'auth.sendReset', password: 'auth.updatePassword', change: 'auth.updatePassword' } as const
+  const needsEmail = mode !== 'password' && mode !== 'change'
+  const needsPassword = (mode === 'login' || mode === 'signup' || mode === 'password' || mode === 'change') && !dev
+  const err = state?.error ? t(state.error) : null
+
+  if (look === 'plain') {
+    return (
+      <form action={run} className="flex flex-col gap-4" noValidate>
+        <input type="hidden" name="next" value={next || ''} />
+        {mode === 'change' && (
+          <div><label className="lbl" htmlFor="current">{t('auth.currentPassword')}</label>
+            <input id="current" name="current" type="password" autoComplete="current-password" required className="inp" /></div>
+        )}
+        {needsPassword && (
+          <div><label className="lbl" htmlFor="password">{t('auth.newPassword')}</label>
+            <input id="password" name="password" type="password" autoComplete="new-password" required minLength={8} className="inp" />
+            <p className="hint">{t('auth.passwordHint')}</p></div>
+        )}
+        {err && <p className="err" role="alert">{err}</p>}
+        {state?.info && <p className="rounded-lg bg-ok-soft px-3 py-2 text-[14px] text-ok" role="status">{t(state.info, state.infoArg ?? '')}</p>}
+        <button className="btn btn-primary btn-block !min-h-[46px]" disabled={pending}>{pending ? '…' : t(submit[mode])}</button>
+      </form>
+    )
+  }
+
+  // which field the server's error is about, so the message sits under it
+  const aboutEmail = !!err && /email|邮箱/i.test(err), aboutPw = !!err && /password|密码/i.test(err)
+  const emailErr = aboutEmail && !aboutPw ? err : null   // "wrong email or password" is about the pair, so it goes under the form
+  const pwErr = aboutPw && !aboutEmail ? err : null
+  const formErr = err && !emailErr && !pwErr ? err : null
   return (
-    <form action={run} className="flex flex-col gap-4" noValidate>
-      {dev && <p className="rounded-lg bg-warn-soft px-3 py-2 text-[13px] text-warn">{t('auth.devNote')}</p>}
+    <form action={run} className="flex flex-col gap-5" noValidate>
+      {dev && <Notice tone="warn">{t('auth.devNote')}</Notice>}
       <input type="hidden" name="next" value={next || ''} />
-      {mode !== 'password' && mode !== 'change' && (
-        <div>
-          <label className="lbl" htmlFor="email">{t('c.email')}</label>
-          <input id="email" name="email" type="email" autoComplete="email" required className="inp" defaultValue={state?.email ?? defaultEmail ?? ''} />
-        </div>
+      {needsEmail && (
+        <TextField label={t('c.email')} id="email" name="email" type="email" autoComplete="email" inputMode="email" required
+          defaultValue={state?.email ?? defaultEmail ?? ''} error={emailErr} />
       )}
       {mode === 'change' && (
-        <div>
-          <label className="lbl" htmlFor="current">{t('auth.currentPassword')}</label>
-          <input id="current" name="current" type="password" autoComplete="current-password" required className="inp" />
-        </div>
+        <PasswordField label={t('auth.currentPassword')} id="current" name="current" autoComplete="current-password" required showLabel={t('auth.showPw')} hideLabel={t('auth.hidePw')} />
       )}
-      {(mode === 'login' || mode === 'signup' || mode === 'password' || mode === 'change') && !dev && (
-        <div>
-          <div className="flex items-baseline justify-between">
-            <label className="lbl" htmlFor="password">{mode === 'password' || mode === 'change' ? t('auth.newPassword') : t('auth.password')}</label>
-            {mode === 'login' && <Link href="/reset" className="text-[13px] font-semibold text-accent">{t('auth.forgot')}</Link>}
-          </div>
-          <input id="password" name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={8} className="inp" />
-          {mode !== 'login' && <p className="hint">{t('auth.passwordHint')}</p>}
-        </div>
+      {needsPassword && (
+        <PasswordField
+          label={mode === 'password' || mode === 'change' ? t('auth.newPassword') : t('auth.password')}
+          aside={mode === 'login' ? <Link href="/reset" className="ds-link text-[13px]">{t('auth.forgot')}</Link> : undefined}
+          id="password" name="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={8}
+          hint={mode !== 'login' ? t('auth.passwordHint') : undefined} error={pwErr} showLabel={t('auth.showPw')} hideLabel={t('auth.hidePw')} />
       )}
       {mode === 'signup' && (
-        <div>
-          <label className="lbl" htmlFor="invite">{t('auth.invite')} <span className="font-normal">({t('c.optional')})</span></label>
-          <input id="invite" name="invite" className="inp uppercase" defaultValue={invite || ''} autoComplete="off" />
-          <p className="hint">{t('auth.inviteHint')}</p>
-        </div>
+        <TextField label={<>{t('auth.invite')} <span className="font-normal ds-muted">({t('c.optional')})</span></>} id="invite" name="invite"
+          className="uppercase" defaultValue={invite || ''} autoComplete="off" hint={t('auth.inviteHint')} />
       )}
       {mode === 'signup' && !dev && (
-        <details className="text-[13px] text-muted">
+        <details className="text-[13px] ds-muted">
           <summary className="cursor-pointer">{t('auth.adminSummary')}</summary>
-          <div className="mt-2">
-            <label className="lbl" htmlFor="setupCode">{t('auth.setupCode')}</label>
-            <input id="setupCode" name="setupCode" className="inp" autoComplete="off" />
-            <p className="hint">{t('auth.setupCodeHint')}</p>
-          </div>
+          <div className="mt-3"><TextField label={t('auth.setupCode')} id="setupCode" name="setupCode" autoComplete="off" hint={t('auth.setupCodeHint')} /></div>
         </details>
       )}
-      {state?.error && <p className="err" role="alert">{t(state.error)}</p>}
-      {state?.info && <p className="rounded-lg bg-ok-soft px-3 py-2 text-[14px] text-ok" role="status">{t(state.info, state.infoArg ?? '')}</p>}
-      {!done && (
-        <button className="btn btn-primary btn-block !min-h-[46px]" disabled={pending}>{pending ? '…' : t(submit[mode])}</button>
-      )}
+      {formErr && <Notice tone="bad">{formErr}</Notice>}
+      {state?.info && <Notice tone="ok">{t(state.info, state.infoArg ?? '')}</Notice>}
+      {!done && <Button type="submit" variant="primary" size="lg" block loading={pending}>{t(submit[mode])}</Button>}
     </form>
   )
 }

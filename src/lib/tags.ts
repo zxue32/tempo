@@ -5,6 +5,7 @@ export const STYLE_TAGS = {
 } as const
 export type StyleTag = (typeof STYLE_TAGS)[keyof typeof STYLE_TAGS][number]
 export const LENGTHS = ['short', 'medium', 'long'] as const
-export function tagsFor(industry: 'nail' | 'barber' | 'both'): string[] {
-  return industry === 'nail' ? [...STYLE_TAGS.nail] : industry === 'barber' ? [...STYLE_TAGS.barber] : [...STYLE_TAGS.nail, ...STYLE_TAGS.barber]
+export function tagsFor(industry: string): string[] {
+  const nail = industry === 'nail' || industry === 'both', hair = industry === 'hair' || industry === 'barber' || industry === 'both'
+  return [...(nail ? STYLE_TAGS.nail : []), ...(hair ? STYLE_TAGS.barber : [])]
 }

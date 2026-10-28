@@ -1,5 +1,6 @@
 export type Lang = 'zh' | 'en'
-export type Industry = 'nail' | 'barber' | 'both'
+export type { Industry } from './templates'
+import type { Industry } from './templates'
 export type ShopStatus = 'draft' | 'pending' | 'changes' | 'live' | 'rejected' | 'suspended'
 export type DayHours = { closed: boolean; open: number; close: number }
 export type Hours = Record<string, DayHours>

@@ -1,4 +1,5 @@
 'use client'
+import { INDUSTRIES, type Industry } from '@/lib/templates'
 import { useActionState, useEffect, useRef, useState } from 'react'
 import { useI18n } from '@/components/i18n'
 import { checkSlug, createShopAction, type SlugCheck } from './actions'
@@ -9,7 +10,7 @@ import type { Lang } from '@/lib/types'
 export function OnboardingForm({ lang, siteUrl, invite }: { lang: Lang; siteUrl: string; invite: string }) {
   const { t } = useI18n()
   const [state, run, pending] = useActionState(createShopAction, null)
-  const [industry, setIndustry] = useState<'nail' | 'barber' | 'both'>('nail')
+  const [industry, setIndustry] = useState<Industry>('nail')
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [slugEdited, setSlugEdited] = useState(false)
@@ -29,7 +30,7 @@ export function OnboardingForm({ lang, siteUrl, invite }: { lang: Lang; siteUrl:
     timer.current = setTimeout(() => { checkSlug(slug).then(setCheck).catch(() => setCheck(null)) }, 350)
   }, [slug])
 
-  const kinds: Array<['nail' | 'barber' | 'both', string]> = [['nail', t('ind.nail')], ['barber', t('ind.barber')], ['both', t('ind.both')]]
+  const kinds: Array<[Industry, string]> = INDUSTRIES.map(k => [k, t(`ind.${k}`)])
   return (
     <form action={run} className="flex flex-col gap-6">
       <fieldset className="card flex flex-col gap-3 p-5">

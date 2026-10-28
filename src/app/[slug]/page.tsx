@@ -1,3 +1,4 @@
+import { hasNailTools } from '@/lib/templates'
 import Link from 'next/link'
 import { loadStorefront } from '@/lib/storefront'
 import { loadCatalog } from '@/lib/data/catalog'
@@ -153,7 +154,7 @@ export default async function Storefront(props: { params: Promise<{ slug: string
           </section>
         )}
 
-        {shop.industry !== 'barber' && (
+        {hasNailTools(shop.industry) && (
           <section aria-labelledby="design-h" className="flex flex-col gap-4">
             <div>
               <h2 id="design-h" className="s-display text-[26px]">{t('nd.title')}</h2>

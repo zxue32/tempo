@@ -1,3 +1,4 @@
+import { hasNailTools } from '@/lib/templates'
 import { emailConfigured } from '@/lib/email'
 import { loadStorefront } from '@/lib/storefront'
 import { loadCatalog } from '@/lib/data/catalog'
@@ -45,7 +46,7 @@ export default async function BookPage(props: { params: Promise<{ slug: string }
     date: isDateString(one(sp.date)) ? one(sp.date) : null, look: look ?? null, design,
     hairColor: hair ? { id: hair.id, label: pick(lang, hair.name, hair.nameZh) + (hair.code ? ` ${hair.code}` : ''), hex: hair.hex } : null,
   }
-  const nailColors = shop.industry === 'barber' ? [] : await listPalette(shop.id, 'nail', true)
+  const nailColors = hasNailTools(shop.industry) ? await listPalette(shop.id, 'nail', true) : []
   return (
     <div className="min-h-screen">
       {preview && shop.status !== 'live' && <PreviewBanner text={t('sf2.previewBanner')} />}
