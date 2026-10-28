@@ -1,7 +1,7 @@
 const RESERVED = new Set(`admin api app apps assets auth b about account accounts billing blog book booking bookings
   business careers contact dashboard demo docs help home invite invites join legal login logout me media new
   onboarding pricing privacy register reset s settings shop shops signup signin staff static status support
-  terms tempo uploads user users www mail email _next favicon robots sitemap manifest cron`.split(/\s+/).filter(Boolean))
+  terms tempo try uploads user users www mail email _next favicon robots sitemap manifest cron vendor models`.split(/\s+/).filter(Boolean))
 
 export function normalizeSlug(input: string): string {
   return input

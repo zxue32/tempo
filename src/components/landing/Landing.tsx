@@ -312,9 +312,10 @@ function Special({ trade, L, tx, lang }: { trade: Trade; L: (x: { zh: string; en
           <ul className="mt-auto flex flex-wrap gap-1.5" aria-label={tx('lp.sample')}>
             {(lang === 'zh' ? LOOKS_ZH : LOOKS_EN).map(n => <li key={n} className="rounded-full px-2.5 py-1 text-[12px]" style={{ background: 'var(--ds-glass-strong)' }}>{n}</li>)}
           </ul>
+          <Link href="/try" className="ds-btn ds-btn-secondary ds-btn-sm self-start">{tx('lp.tryIt')} →</Link>
         </div>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/landing/tryon.jpg" alt={lang === 'zh' ? '在真实的手上试月光猫眼' : 'Moonlight cat-eye tried on a real hand'} className="h-full min-h-[260px] w-full object-cover" />
+        <img src="/landing/lune-hand.jpg" alt={lang === 'zh' ? '3D 手模上试月光猫眼' : 'Moonlight cat-eye on the 3D hand'} className="h-full min-h-[260px] w-full object-cover" />
       </Tilt>
     )
   }

@@ -10,7 +10,6 @@ import { money } from '@/components/ui'
 import { env } from '@/lib/env'
 import { themeOf } from '@/lib/themes'
 import { listGallery, listPalette } from '@/lib/data/rules'
-import { StoreDesigner } from '@/components/StoreDesigner'
 import { HairPalette } from '@/components/HairPalette'
 import { looksFrom } from '@/lib/looks'
 import { StoreGallery } from '@/components/StoreGallery'
@@ -38,7 +37,6 @@ export default async function Storefront(props: { params: Promise<{ slug: string
 
   const theme = themeOf(shop.theme)
   const [{ services, staff, skills }, gallery, palette] = await Promise.all([loadCatalog(shop.id, { forCustomers: true }), listGallery(shop.id), listPalette(shop.id, undefined, true)])
-  const nailColors = palette.filter(c => c.kind === 'nail')
   const hairColors = palette.filter(c => c.kind === 'hair')
   const looks = looksFrom(gallery, staff, services, lang)
   const withWork = new Set(looks.map(l => l.staffId).filter(Boolean))
@@ -155,13 +153,19 @@ export default async function Storefront(props: { params: Promise<{ slug: string
         )}
 
         {hasNailTools(shop.industry) && (
-          <section aria-labelledby="design-h" className="flex flex-col gap-4">
-            <div>
-              <h2 id="design-h" className="s-display text-[26px]">{t('nd.title')}</h2>
-              <p className="text-[14px] s-muted">{t('nd.sub')}</p>
-            </div>
-            <StoreDesigner slug={shop.slug} swatches={nailColors.map(c => ({ hex: c.hex, name: c.name, nameZh: c.nameZh, code: c.code }))}
-              serviceId={main.find(s => s.category === 'hand')?.id ?? null} />
+          <section aria-labelledby="design-h">
+            {/* folded: a card that opens the 3D studio on its own page, so the shop page stays light */}
+            <Link href={`/${shop.slug}/design`} className="group grid overflow-hidden no-underline sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"
+              style={{ background: '#16131a', color: '#f6f1ec', borderRadius: 'var(--s-rs)' }}>
+              <div className="flex flex-col justify-center gap-3 p-6 sm:p-8">
+                <span className="text-[12px] tracking-[0.18em] opacity-70">3D · {t("nd.title")}</span>
+                <h2 id="design-h" className="s-display text-[28px] leading-tight">{t('lu.teaserT')}</h2>
+                <p className="text-[14px] leading-relaxed opacity-80">{t('lu.teaserD')}</p>
+                <span className="s-btn mt-2 self-start transition-transform group-hover:translate-x-1">{t('lu.open')} →</span>
+              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/landing/lune-hand.jpg" alt="" className="h-full max-h-[340px] min-h-[220px] w-full object-cover" loading="lazy" />
+            </Link>
           </section>
         )}
 
