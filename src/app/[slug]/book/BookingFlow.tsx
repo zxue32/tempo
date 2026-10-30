@@ -398,7 +398,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
             <div className="flex flex-col gap-5">
               <div className="flex flex-col gap-2">
                 <h1 className="s-display text-[30px]">{t('bf.chooseServices')}</h1>
-                {shop.maxGuests > 1 && (
+                {shop.maxGuests > 1 && guests.length > 1 && (
                   <div className="flex flex-wrap items-center gap-2">
                     {guests.map((gs, i) => (
                       <span key={i} className="inline-flex items-center overflow-hidden rounded-full border s-line" style={i === g ? { borderColor: 'var(--s-ink)', boxShadow: 'inset 0 0 0 1px var(--s-ink)' } : {}}>
@@ -429,7 +429,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                         <span className="s-tick">✓</span>
                         <span className="min-w-0 flex-1">
                           <b className="block">{pick(lang, s.name, s.nameZh)}</b>
-                          <span className="block text-[13px] s-muted">{fmtDuration(s.durationMin, lang)}{pick(lang, s.descEn, s.descZh) ? ' · ' + pick(lang, s.descEn, s.descZh) : ''}</span>
+                          <span className="block text-[13px] s-muted">{fmtDuration(s.durationMin, lang)}{pick(lang, s.descEn, s.descZh) ? <Desc text={pick(lang, s.descEn, s.descZh)} open={on} /> : null}</span>
                         </span>
                         {shop.showPrices && s.priceCents != null && <b className="tnum">{s.priceFrom ? t('c.priceFrom', money(s.priceCents, shop.currency)) : money(s.priceCents, shop.currency)}</b>}
                       </button>
@@ -485,6 +485,12 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                   </section>
                 )
               })()}
+              {shop.maxGuests > 1 && guests.length === 1 && guest.serviceIds.length > 0 && (
+                <button type="button" className="self-start text-[13.5px] font-semibold" style={{ color: 'var(--s-accent)' }}
+                  onClick={() => { setGuests(l => [...l, { serviceIds: [], addonIds: [], staffId: shop.allowAnyStaff ? null : staff[0]?.id ?? null }]); setG(1); resetTime() }}>
+                  {t('bf.addGuest')}
+                </button>
+              )}
             </div>
           )}
 
@@ -701,6 +707,12 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
       {step === 3 && <div className="mt-6 lg:hidden">{summary}</div>}
     </div>
   )
+}
+
+/** A service's description: one short line while the card is unselected, the whole thing once it's picked. */
+function Desc({ text, open }: { text: string; open: boolean }) {
+  const short = text.length > 42 && !open
+  return <> · <span className={short ? 'inline-block max-w-[26ch] truncate align-bottom' : ''}>{text}</span></>
 }
 
 function PersonChip({ on, label, sub, color, letter, photo, onClick, disabled }: { on: boolean; label: string; sub: string; color: string; letter: string; photo?: string | null; onClick: () => void; disabled?: boolean }) {

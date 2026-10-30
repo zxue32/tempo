@@ -8,7 +8,7 @@ import type { LuneDesign } from '@/lib/lune'
 export type StudioElement = HTMLElement & { getDesign(): LuneDesign; setDesign(v: unknown): void; exportCard(): Promise<Blob> }
 export type BookPayload = { design: LuneDesign; summary: string }
 
-const SRC = '/vendor/lune-nail-studio.js?v=1.2.1-theme'
+const SRC = '/vendor/lune-nail-studio.js?v=1.3.2-sky'
 let loading: Promise<void> | undefined
 function loadStudio(): Promise<void> {
   if (customElements.get('lune-nail-studio')) return Promise.resolve()

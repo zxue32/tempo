@@ -7,7 +7,7 @@ import { saveShifts } from '@/lib/data/schedule'
 import { availability } from '@/lib/availability'
 import { loadCatalog } from '@/lib/data/catalog'
 import { createBooking, rescheduleByToken, cancelByToken, byToken, BookingError, shopMove, shopSetStatus, shopSetItems, lookupByCode } from '@/lib/bookings'
-import { addDays, nowInZone } from '@/lib/tz'
+import { addDays, nowInZone, weekday } from '@/lib/tz'
 import { searchBookings, listCustomers, getCustomer, buildReport, savePreferences, preferencesFor } from '@/lib/data/insights'
 import { cleanPrefs, hasPrefs } from '@/lib/prefs'
 import { measuredDurations, integrityCheck, recordFunnel, funnel } from '@/lib/data/pilot'
@@ -346,7 +346,8 @@ describe('shop rules against the database', () => {
 
   it('a cancellation emails the waitlist when the freed time fits', async () => {
     const today = nowInZone('America/New_York').date
-    const D = addDays(today, 2)
+    let D = addDays(today, 2)
+    while (weekday(D) === 0) D = addDays(D, 1) // the shop opens later on Sundays, so 10:00 would not be a slot
     const b = await online(D, H(10), mia, '5555552401', new Date())
     await joinWaitlist(shop, { date: D, fromMin: H(10), toMin: H(10, 30), serviceIds: [gel], addonIds: [], staffId: mia, name: 'Wait', phone: null, email: 'wait@example.com', lang: 'en' })
     expect(await notifyWaitlist(shop, D)).toBe(0)
