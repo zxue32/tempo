@@ -46,7 +46,7 @@ function startInstant(date: string, start: number, tz: string, fold?: 'earlier' 
   return fold === 'earlier' ? r.earlier : r.later
 }
 
-export type Contact = { name: string; phone: string | null; email: string | null }
+export type Contact = { name: string; phone: string | null; email: string | null; /** the client ticked "send me offers" (CRM): only ever switches consent on */ marketing?: boolean }
 
 export type CreateInput = {
   shop: Shop
@@ -165,19 +165,23 @@ async function uniqueCode(q: Tx, shopId: string): Promise<string> {
   throw new Error('could not allocate a booking code')
 }
 
-async function upsertCustomer(q: Tx, shop: Shop, c: Contact): Promise<{ id: string; blocked: boolean } | null> {
+async function upsertCustomer(q: Tx, shop: Shop, c: Contact, kind: BookingKind): Promise<{ id: string; blocked: boolean } | null> {
   const shopId = shop.id
   // read the number in the shop's own region; its key is unchanged for US numbers, so returning customers still match
   const parsed = parsePhone(c.phone, marketOf(shop).phoneRegion)
   const phone = parsed?.key ?? normPhone(c.phone)
   if (!phone && !c.email) return null
+  const source = kind === 'online' ? 'online' : kind === 'walkin' ? 'walkin' : 'phone'
+  const consent = c.marketing === true
   if (phone) {
     const [row] = await q<{ id: string; blocked: boolean }[]>`
-      insert into app.customers (shop_id, name, phone, phone_norm, phone_e164, email)
-      values (${shopId}, ${c.name}, ${c.phone}, ${phone}, ${parsed?.e164 ?? null}, ${c.email})
+      insert into app.customers (shop_id, name, phone, phone_norm, phone_e164, email, source, marketing_consent, marketing_consent_at)
+      values (${shopId}, ${c.name}, ${c.phone}, ${phone}, ${parsed?.e164 ?? null}, ${c.email}, ${source}, ${consent}, ${consent ? new Date() : null})
       on conflict (shop_id, phone_norm) where phone_norm <> '' do update set
         name = excluded.name, phone = excluded.phone, phone_e164 = coalesce(excluded.phone_e164, app.customers.phone_e164),
-        email = coalesce(excluded.email, app.customers.email)
+        email = coalesce(excluded.email, app.customers.email),
+        marketing_consent = app.customers.marketing_consent or excluded.marketing_consent,
+        marketing_consent_at = case when excluded.marketing_consent and not app.customers.marketing_consent then now() else app.customers.marketing_consent_at end
       returning id, blocked
     `
     return row
@@ -185,9 +189,13 @@ async function upsertCustomer(q: Tx, shop: Shop, c: Contact): Promise<{ id: stri
   const [found] = await q<{ id: string; blocked: boolean }[]>`
     select id, blocked from app.customers where shop_id = ${shopId} and lower(email) = lower(${c.email}) order by created_at limit 1
   `
-  if (found) return found
+  if (found) {
+    if (consent) await q`update app.customers set marketing_consent = true, marketing_consent_at = coalesce(marketing_consent_at, now()) where id = ${found.id}`
+    return found
+  }
   const [row] = await q<{ id: string; blocked: boolean }[]>`
-    insert into app.customers (shop_id, name, email) values (${shopId}, ${c.name}, ${c.email}) returning id, blocked
+    insert into app.customers (shop_id, name, email, source, marketing_consent, marketing_consent_at)
+    values (${shopId}, ${c.name}, ${c.email}, ${source}, ${consent}, ${consent ? new Date() : null}) returning id, blocked
   `
   return row
 }
@@ -246,7 +254,7 @@ export async function createBooking(input: CreateInput): Promise<CreateResult> {
 
         // abuse limits for customer bookings
         let customer: { id: string; blocked: boolean } | null = null
-        if (input.contact) customer = await upsertCustomer(tx, shop, input.contact)
+        if (input.contact) customer = await upsertCustomer(tx, shop, input.contact, input.kind)
         if (mode === 'online') {
           if (customer?.blocked) throw new BookingError('blocked')
           if (customer) {

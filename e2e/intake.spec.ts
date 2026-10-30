@@ -53,7 +53,7 @@ test('booking questions: “not sure” waits for the shop, the owner confirms i
     await page.locator('#bf-name').fill('Intake Tester')
     await page.locator('#bf-phone').fill(`(555) 555-${String(Date.now()).slice(-4)}`)
     await page.locator('#bf-email').fill('intake-tester@example.com')
-    await page.getByRole('checkbox').check()
+    await page.getByRole('checkbox', { name: 'I’ve read the booking notes' }).check()
     await page.getByRole('button', { name: 'Confirm booking' }).click()
     await page.waitForURL(/\/b\/[A-Za-z0-9_-]+/)
     // a request, never shown as confirmed

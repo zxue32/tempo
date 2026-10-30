@@ -12,13 +12,13 @@ const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt
 export const emailConfigured = () => Boolean(process.env.RESEND_API_KEY)
 
 /** Sends through Resend when RESEND_API_KEY is set; otherwise logs and records "skipped". Never throws. */
-export async function sendMail(m: Mail): Promise<void> {
+export async function sendMail(m: Mail): Promise<'sent' | 'failed' | 'skipped'> {
   const key = process.env.RESEND_API_KEY
   const from = process.env.EMAIL_FROM || `${env.platformName} <bookings@example.com>`
   let status: 'sent' | 'failed' | 'skipped' = 'skipped'
   let providerId: string | null = null
   let error: string | null = null
-  if (!m.to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(m.to)) return
+  if (!m.to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(m.to)) return 'skipped'
   if (key) {
     try {
       const res = await fetch('https://api.resend.com/emails', {
@@ -45,6 +45,7 @@ export async function sendMail(m: Mail): Promise<void> {
       values (${m.shopId ?? null}, ${m.bookingId ?? null}, ${m.to}, ${m.template}, ${m.subject}, ${status}, ${providerId}, ${error})
     `
   } catch { /* logging must never break a booking */ }
+  return status
 }
 
 function layout(opts: { accent: string; title: string; lead: string; rows: Array<[string, string]>; button?: { href: string; label: string }; extra?: string[]; footer: string }) {

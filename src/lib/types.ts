@@ -55,6 +55,8 @@ export type Shop = {
   minGap: number
   noshowLimit: number
   waitlistEnabled: boolean
+  /** days after a visit when the shop would like the client back (CRM follow-ups) */
+  rebookDays: number
   pilotBaseline: PilotBaseline
   inviteCode: string | null
   reviewNote: string | null

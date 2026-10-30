@@ -20,6 +20,8 @@ import { logError } from '@/lib/log'
 import { saveResource, deleteResource, addGalleryItem, updateGalleryItem, deleteGalleryItem, reorderGallery, listPalette, saveSwatch, deleteSwatch, reorderPalette } from '@/lib/data/rules'
 import { integrityCheck } from '@/lib/data/pilot'
 import { savePreferences } from '@/lib/data/insights'
+import * as crm from '@/lib/data/crm'
+import { sendMail } from '@/lib/email'
 import { cleanPrefs } from '@/lib/prefs'
 import { markWaitlist } from '@/lib/data/waitlist'
 import { notifyWaitlist } from '@/lib/waitlistNotify'
@@ -28,7 +30,7 @@ import { mailCustomer, mailAdminsNewApplication, mailStaffInvite, emailConfigure
 import { env } from '@/lib/env'
 import { storeImage, UploadError } from '@/lib/storage'
 import { uuid, dateStr, minuteOfDay, guestsSchema, emailRe } from '@/lib/validate'
-import { isValidTimeZone } from '@/lib/tz'
+import { isValidTimeZone, nowInZone } from '@/lib/tz'
 import { THEMES } from '@/lib/themes'
 import type { Booking, BookingStatus, Lang, Preferences } from '@/lib/types'
 
@@ -459,6 +461,7 @@ const settingsSchema = z.object({
   minGap: z.number().int().min(0).max(120),
   noshowLimit: z.number().int().min(0).max(20),
   waitlistEnabled: z.boolean(),
+  rebookDays: z.number().int().min(0).max(365),
 }).partial()
 
 export async function saveSettingsAction(shopId: string, input: z.input<typeof settingsSchema>): Promise<Result> {
@@ -720,4 +723,160 @@ export async function replayAction(shopId: string, csv: string): Promise<Result<
   if (typeof csv !== 'string' || csv.length > 400_000) return fail('invalid')
   const shop = (await getShop(shopId))!
   return { ok: true, result: await replayPaperBook(shop, csv) }
+}
+
+// ---------------------------------------------------------------- CRM
+
+const crmId = z.string().uuid()
+
+export async function setTagsAction(shopId: string, customerId: string, tags: string[]): Promise<Result> {
+  const { user } = await requireShop(shopId, 'manager')
+  const p = z.object({ id: crmId, tags: z.array(z.string().max(40)).max(40) }).safeParse({ id: customerId, tags })
+  if (!p.success) return fail('invalid')
+  try {
+    if (!(await crm.setTags(shopId, customerId, p.data.tags))) return fail('not_found')
+  } catch { return fail('invalid', 'tags') }
+  await audit(sql, { shopId, actorUser: user.id, action: 'customer.tags', targetType: 'customer', targetId: customerId, detail: { n: p.data.tags.length } })
+  return { ok: true }
+}
+
+export async function updateCrmAction(shopId: string, customerId: string, patch: crm.CrmPatch): Promise<Result> {
+  const { user } = await requireShop(shopId, 'manager')
+  const p = z.object({
+    birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    source: z.enum(['online', 'walkin', 'phone', 'import', 'manual']).optional(),
+    marketingConsent: z.boolean().optional(),
+  }).strict().safeParse(patch)
+  if (!p.success || !crmId.safeParse(customerId).success) return fail('invalid')
+  if (!(await crm.updateCrm(shopId, customerId, p.data))) return fail('not_found')
+  await audit(sql, { shopId, actorUser: user.id, action: 'customer.update', targetType: 'customer', targetId: customerId, detail: { fields: Object.keys(p.data) } })
+  return { ok: true }
+}
+
+export async function addNoteAction(shopId: string, customerId: string, kind: crm.NoteKind, body: string): Promise<Result<{ id: string }>> {
+  const { user } = await requireShop(shopId, 'manager')
+  const p = z.object({ id: crmId, kind: z.enum(['note', 'call', 'message', 'visit']), body: z.string().trim().min(1).max(2000) }).safeParse({ id: customerId, kind, body })
+  if (!p.success) return fail('invalid')
+  try {
+    const id = await crm.addNote(shopId, customerId, user.id, p.data.kind, p.data.body)
+    return { ok: true, id }
+  } catch (e) {
+    if ((e as { code?: string }).code === '23503') return fail('not_found')
+    throw e
+  }
+}
+
+export async function deleteNoteAction(shopId: string, noteId: string): Promise<Result> {
+  await requireShop(shopId, 'manager')
+  if (!crmId.safeParse(noteId).success) return fail('invalid')
+  return (await crm.deleteNote(shopId, noteId)) ? { ok: true } : fail('not_found')
+}
+
+export async function scheduleFollowUpAction(shopId: string, customerId: string, f: { due: string; reason: 'rebook' | 'birthday' | 'lapsed' | 'custom'; note: string | null }): Promise<Result<{ id: string }>> {
+  const { user } = await requireShop(shopId, 'manager')
+  const p = z.object({ due: dateStr, reason: z.enum(['rebook', 'birthday', 'lapsed', 'custom']), note: z.string().max(500).nullable() }).safeParse(f)
+  if (!p.success || !crmId.safeParse(customerId).success) return fail('invalid')
+  try {
+    const r = await crm.scheduleFollowUp(shopId, customerId, user.id, p.data)
+    revalidatePath(`/dashboard/${shopId}/customers/followups`)
+    return { ok: true, id: r.id }
+  } catch (e) {
+    if ((e as { code?: string }).code === '23503') return fail('not_found')
+    throw e
+  }
+}
+
+export async function closeFollowUpAction(shopId: string, id: string, how: 'done' | 'dismissed'): Promise<Result> {
+  const { user } = await requireShop(shopId, 'manager')
+  if (!crmId.safeParse(id).success || (how !== 'done' && how !== 'dismissed')) return fail('invalid')
+  const ok = await crm.closeFollowUp(shopId, id, user.id, how)
+  revalidatePath(`/dashboard/${shopId}/customers/followups`)
+  return ok ? { ok: true } : fail('not_found')
+}
+
+export async function saveRebookDaysAction(shopId: string, days: number): Promise<Result> {
+  await requireShop(shopId, 'manager')
+  const p = z.number().int().min(0).max(365).safeParse(days)
+  if (!p.success) return fail('invalid')
+  await updateShop(shopId, { rebookDays: p.data })
+  revalidatePath(`/dashboard/${shopId}/customers/followups`)
+  return { ok: true }
+}
+
+const campaignSchema = z.object({
+  name: z.string().trim().min(1).max(80), subject: z.string().trim().min(1).max(120), body: z.string().trim().min(1).max(4000),
+  segment: z.object({ segment: z.enum(crm.SEGMENTS), tag: z.string().trim().max(40).optional() }),
+})
+
+export async function createCampaignAction(shopId: string, input: z.input<typeof campaignSchema>): Promise<Result<{ id: string }>> {
+  const { user } = await requireShop(shopId, 'manager')
+  const p = campaignSchema.safeParse(input)
+  if (!p.success) return fail('invalid', p.error.issues[0]?.path.join('.'))
+  const seg = { segment: p.data.segment.segment, ...(p.data.segment.tag ? { tag: p.data.segment.tag } : {}) }
+  const c = await crm.createCampaign(shopId, user.id, { ...p.data, segment: seg })
+  revalidatePath(`/dashboard/${shopId}/customers/campaigns`)
+  return { ok: true, id: c.id }
+}
+
+export async function deleteCampaignAction(shopId: string, id: string): Promise<Result> {
+  await requireShop(shopId, 'manager')
+  if (!crmId.safeParse(id).success) return fail('invalid')
+  const ok = await crm.deleteCampaign(shopId, id)
+  revalidatePath(`/dashboard/${shopId}/customers/campaigns`)
+  return ok ? { ok: true } : fail('not_found')
+}
+
+export async function campaignAudienceAction(shopId: string, segment: { segment: string; tag?: string }): Promise<Result<{ n: number }>> {
+  await requireShop(shopId, 'manager')
+  const p = campaignSchema.shape.segment.safeParse(segment)
+  if (!p.success) return fail('invalid')
+  const shop = (await getShop(shopId))!
+  const rows = await crm.campaignAudience(shopId, p.data, nowInZone(shop.timezone).date)
+  return { ok: true, n: rows.length }
+}
+
+/** Send a campaign through the shop's email sender. Each recipient is a client who opted in. */
+export async function sendCampaignAction(shopId: string, id: string): Promise<Result<{ sent: number; failed: number; skipped: number }>> {
+  const { user } = await requireShop(shopId, 'manager')
+  if (!crmId.safeParse(id).success) return fail('invalid')
+  if (!emailConfigured()) return fail('email_off')
+  const shop = (await getShop(shopId))!
+  try {
+    const r = await crm.sendCampaign(shop, id, user.id, nowInZone(shop.timezone).date, {
+      send: async m => {
+        const s = await sendMail({ to: m.to, subject: m.subject, html: m.html, text: m.text, template: 'campaign', shopId, replyTo: shop.email })
+        return s === 'sent' ? 'sent' : 'failed'
+      },
+    })
+    await audit(sql, { shopId, actorUser: user.id, action: 'campaign.send', targetType: 'campaign', targetId: id, detail: r })
+    revalidatePath(`/dashboard/${shopId}/customers/campaigns`)
+    return { ok: true, ...r }
+  } catch (e) {
+    const msg = (e as Error).message
+    if (/already/.test(msg)) return fail('already_sent')
+    if (/not found/.test(msg)) return fail('not_found')
+    logError('action', e)
+    return fail('server')
+  }
+}
+
+export async function createCustomerAction(shopId: string, d: { name: string; phone: string; email: string; notes: string; source: 'walkin' | 'phone' | 'manual' }): Promise<Result<{ id: string }>> {
+  const { user } = await requireShop(shopId, 'manager')
+  const p = z.object({ name: z.string().trim().min(1).max(80), phone: z.string().trim().max(30), email: z.string().trim().max(120), notes: z.string().max(2000), source: z.enum(['walkin', 'phone', 'manual']) }).safeParse(d)
+  if (!p.success) return fail('invalid')
+  if (p.data.email && !emailRe.test(p.data.email)) return fail('invalid', 'email')
+  const id = await crm.createCustomer(shopId, p.data)
+  if (!id) return fail('invalid')
+  await audit(sql, { shopId, actorUser: user.id, action: 'customer.create', targetType: 'customer', targetId: id, detail: { source: p.data.source } })
+  revalidatePath(`/dashboard/${shopId}/customers`)
+  return { ok: true, id }
+}
+
+export async function importCustomersAction(shopId: string, csv: string): Promise<Result<{ added: number; updated: number; skipped: number }>> {
+  const { user } = await requireShop(shopId, 'manager')
+  if (typeof csv !== 'string' || csv.length > 2_000_000) return fail('invalid')
+  const r = await crm.importCustomers(shopId, csv)
+  await audit(sql, { shopId, actorUser: user.id, action: 'customer.import', targetType: 'shop', targetId: shopId, detail: r })
+  revalidatePath(`/dashboard/${shopId}/customers`)
+  return { ok: true, ...r }
 }

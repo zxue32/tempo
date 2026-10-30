@@ -166,7 +166,7 @@ test('gallery, rules, intake question, waitlist, confirmation and pilot evidence
   await c.locator('#bf-name').fill('Lola Look')
   await c.locator('#bf-phone').fill('(555) 555-0177')
   await c.locator('#bf-email').fill('lola@example.com')
-  await c.getByRole('checkbox').check()
+  await c.getByRole('checkbox', { name: 'I’ve read the booking notes' }).check()
   await a11y(c, 'booking: details')
   await c.getByRole('button', { name: 'Confirm booking' }).click()
   await c.waitForURL(/\/b\/[A-Za-z0-9_-]+/)

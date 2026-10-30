@@ -136,7 +136,7 @@ test('shop owner → approval → client books, reschedules and cancels', async 
   await c.locator('#bf-phone').fill('(555) 555-0142')
   await c.locator('#bf-email').fill('ada@example.com')
   await c.locator('#bf-notes').fill('Short almond, nude')
-  await c.getByRole('checkbox').check()
+  await c.getByRole('checkbox', { name: 'I’ve read the booking notes' }).check()
   await snap(c, '06-details')
   await c.getByRole('button', { name: 'Confirm booking' }).click()
   await c.waitForURL(/\/b\/[A-Za-z0-9_-]+/)
@@ -189,7 +189,7 @@ test('shop owner → approval → client books, reschedules and cancels', async 
   }
   await o.goto(`${base}/customers`)
   await o.getByRole('link', { name: 'Ada Client' }).click()
-  await expect(o.getByText('Booking history')).toBeVisible()
+  await expect(o.getByRole('heading', { name: 'Timeline' })).toBeVisible()
   await snap(o, '10-customer')
   const csv = await o.request.get(`${base}/bookings/export?from=${from}&to=${to}`)
   expect(csv.headers()['content-type']).toContain('text/csv')

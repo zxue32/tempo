@@ -6,12 +6,19 @@ import { shopHasHairTools, shopHasNailTools } from '@/lib/industries/shop'
 import { listStaff } from '@/lib/data/catalog'
 import { listPalette } from '@/lib/data/rules'
 import { getCustomer } from '@/lib/data/insights'
+import { timeline, customerTags, segmentOf, type CustomerRow } from '@/lib/data/crm'
+import { sql } from '@/lib/db'
+import type { DictKey } from '@/lib/i18n'
 import { getT } from '@/lib/i18n/server'
 import { pick } from '@/lib/i18n'
 import { fmtDate, fmtTime, nowInZone } from '@/lib/tz'
-import { BookingStatusChip, money } from '@/components/ui'
+import { money } from '@/components/ui'
 import { CustomerForm } from './CustomerForm'
 import { PrefCard } from './PrefCard'
+import { CrmCard } from './CrmCard'
+import { Timeline } from './Timeline'
+import { CustomersNav } from '../CustomersNav'
+import { SEG_CHIP } from '../segments'
 
 export default async function CustomerPage(props: PageProps<'/dashboard/[shopId]/customers/[customerId]'>) {
   const { shopId, customerId } = await props.params
@@ -21,8 +28,15 @@ export default async function CustomerPage(props: PageProps<'/dashboard/[shopId]
   const today = nowInZone(shop.timezone).date
   const data = await getCustomer(shopId, customerId, today)
   if (!data) notFound()
-  const { customer: c, history, recentDesigns } = data
-  const staffList = await listStaff(shopId)
+  const { customer, recentDesigns } = data
+  const c = customer as CustomerRow
+  const [entries, tags, [open], staffList] = await Promise.all([
+    timeline(shopId, customerId),
+    customerTags(shopId),
+    sql<{ due: string; reason: string }[]>`select due::text, reason from app.follow_ups where shop_id = ${shopId} and customer_id = ${customerId} and status = 'open' order by due limit 1`,
+    listStaff(shopId),
+  ])
+  const seg = segmentOf(c, today, shop.rebookDays)
   const staff = new Map(staffList.map(s => [s.id, s]))
   const palette = await listPalette(shopId, undefined, true)
   const nailColors = palette.filter(p => p.kind === 'nail').map(p => ({ hex: p.hex, name: p.name, nameZh: p.nameZh }))
@@ -37,9 +51,12 @@ export default async function CustomerPage(props: PageProps<'/dashboard/[shopId]
   ]
   return (
     <div className="flex flex-col gap-5">
-      <Link href={`/dashboard/${shopId}/customers`} className="text-[14px] text-muted">← {t('cu.all')}</Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link href={`/dashboard/${shopId}/customers`} className="text-[14px] text-muted">← {t('cu.all')}</Link>
+        <CustomersNav shopId={shopId} />
+      </div>
       <div>
-        <h1 className="font-display text-[28px] font-extrabold tracking-tight">{c.name}</h1>
+        <h1 className="font-display flex flex-wrap items-center gap-2 text-[28px] font-extrabold tracking-tight">{c.name}{seg !== 'new' && <span className={`chip ${SEG_CHIP[seg] ?? ''}`}>{t(`cu.seg.${seg}` as DictKey)}</span>}</h1>
         <p className="text-[14px] text-muted">{t('cu.since', fmtDate(c.createdAt.toISOString().slice(0, 10), lang, { year: 'numeric', month: 'short', day: 'numeric' }))}</p>
       </div>
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -53,34 +70,14 @@ export default async function CustomerPage(props: PageProps<'/dashboard/[shopId]
             <h2 className="text-[17px] font-bold">{t('cu.details')}</h2>
             <CustomerForm shopId={shopId} customer={{ id: c.id, name: c.name, phone: c.phone ?? '', email: c.email ?? '', notes: c.notes ?? '', blocked: c.blocked }} />
           </section>
+          <CrmCard shopId={shopId} customerId={c.id} suggestions={tags.map(x => x.tag)}
+            initial={{ tags: c.tags, birthday: c.birthday, source: c.source, marketingConsent: c.marketingConsent, marketingConsentAt: c.marketingConsentAt ? new Date(c.marketingConsentAt).toISOString() : null, lastContactedAt: c.lastContactedAt ? new Date(c.lastContactedAt).toISOString() : null }} />
           <PrefCard shopId={shopId} customerId={c.id} initial={c.preferences ?? {}} staff={staffList} nailColors={nailColors} hairColors={hairColors} tools={{ nail: shopHasNailTools(shop), hair: shopHasHairTools(shop) }} recentDesigns={recentDesigns} />
         </div>
-        <section className="flex flex-col gap-3">
-          <h2 className="text-[17px] font-bold">{t('cu.history')}</h2>
-          {history.length === 0 ? <div className="card p-6 text-muted">{t('bl.empty')}</div> : (
-            <ul className="flex flex-col gap-2">
-              {history.map(b => {
-                const st = staff.get(b.staffId)
-                return (
-                  <li key={b.id}>
-                    <Link href={`/dashboard/${shopId}?date=${b.date}&open=${b.id}`} className={`card flex flex-wrap items-center gap-3 p-3 text-ink no-underline ${b.status === 'cancelled' ? 'opacity-60' : ''}`}>
-                      <span className="tnum w-28 flex-none text-[13.5px]"><b className="block">{fmtDate(b.date, lang, b.date.slice(0, 4) === today.slice(0, 4) ? { weekday: 'short', month: 'short', day: 'numeric' } : { year: 'numeric', month: 'short', day: 'numeric' })}</b><span className="text-muted">{fmtTime(b.startMin, lang)}</span></span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[14px]">{(b.items ?? []).map(i => (i.kind === 'addon' ? '+ ' : '') + pick(lang, i.name, i.nameZh)).join(', ')}</span>
-                        <span className="block text-[12.5px] text-muted">
-                          <span className="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={{ background: st?.color ?? '#999' }} />
-                          {st ? pick(lang, st.name, st.nameZh) : '—'} · {t(`bk.${b.kind}`)}{b.cancelReason ? ` · ${b.cancelReason}` : ''}
-                        </span>
-                        {b.notes && <span className="block text-[12.5px] text-muted">“{b.notes}”</span>}
-                      </span>
-                      <span className="flex flex-col items-end gap-1"><BookingStatusChip status={b.status} t={t} />{shop.showPrices && <span className="tnum text-[13px]">{money(b.estPriceCents, shop.currency)}</span>}</span>
-                    </Link>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </section>
+        <Timeline shopId={shopId} customerId={c.id} today={today} showPrices={shop.showPrices} currency={shop.currency} rebookDays={shop.rebookDays}
+          staffNames={Object.fromEntries(staffList.map(s => [s.id, pick(lang, s.name, s.nameZh)]))}
+          openFollowUp={open ?? null}
+          entries={entries.map(e => ({ ...e, at: e.at.toISOString() }))} />
       </div>
     </div>
   )

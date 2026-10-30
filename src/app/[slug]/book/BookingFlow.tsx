@@ -73,7 +73,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
   const [slot, setSlot] = useState<SlotRes | null>(null)
   const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
-  const [form, setForm] = useState({ name: '', phone: '', email: '', notes: '', agree: false, website: '' })
+  const [form, setForm] = useState({ name: '', phone: '', email: '', notes: '', agree: false, marketing: false, website: '' })
   const [photo, setPhoto] = useState<string | null>(initial.look?.url ?? null)
   // what the customer sees: their own copy, because an uploaded reference photo is private to the shop (CORE-04)
   const [photoPreview, setPhotoPreview] = useState<string | null>(initial.look?.url ?? null)
@@ -278,7 +278,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
           }), date, start: slot.start,
           name: form.name.trim(), phone: form.phone.trim(), email: form.email.trim(),
           notes: [form.notes.trim(), lune ? `${t('lu.from3d')}「${lune.name}」: ${noteFromSummary(lune.summary)}` : design ? `${t('nd.yourDesign')}: ${describeDesign(design, t as (k: string) => string)}` : '', hairColor ? `${t('hc.chosen')}: ${hairColor.label}` : ''].filter(Boolean).join('\n').slice(0, 1000),
-          photoUrl, lookId: photoUrl ? null : lookId, lang, website: form.website, session: visitId(), design,
+          photoUrl, lookId: photoUrl ? null : lookId, lang, website: form.website, session: visitId(), design, marketing: form.marketing,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -676,6 +676,10 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                 <label className="mt-1 flex items-center gap-2 font-semibold">
                   <input type="checkbox" className="h-5 w-5" style={{ accentColor: 'var(--s-accent)' }} checked={form.agree} onChange={e => setForm({ ...form, agree: e.target.checked })} />
                   {t('bf.agree')}
+                </label>
+                <label className="flex items-center gap-2 s-muted">
+                  <input type="checkbox" className="h-5 w-5" style={{ accentColor: 'var(--s-accent)' }} checked={form.marketing} onChange={e => setForm({ ...form, marketing: e.target.checked })} />
+                  {t('bf.marketing')}
                 </label>
               </div>
               {err && <p className="text-[14px] font-semibold" style={{ color: '#C2362B' }} role="alert">{err}</p>}
