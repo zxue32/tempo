@@ -1,4 +1,4 @@
-import { hasNailTools } from '@/lib/templates'
+import { shopHasNailTools } from '@/lib/industries/shop'
 import Link from 'next/link'
 import { loadStorefront } from '@/lib/storefront'
 import { loadCatalog } from '@/lib/data/catalog'
@@ -114,7 +114,7 @@ export default async function Storefront(props: { params: Promise<{ slug: string
                     <b className="block">{pick(lang, s.name, s.nameZh)}</b>
                     <span className="block text-[13px] s-muted">{fmtDuration(s.durationMin, lang)}{pick(lang, s.descEn, s.descZh) ? ' · ' + pick(lang, s.descEn, s.descZh) : ''}</span>
                   </span>
-                  {shop.showPrices && s.priceCents != null && <b className="tnum">{s.priceFrom ? t('c.priceFrom', money(s.priceCents)) : money(s.priceCents)}</b>}
+                  {shop.showPrices && s.priceCents != null && <b className="tnum">{s.priceFrom ? t('c.priceFrom', money(s.priceCents, shop.currency)) : money(s.priceCents, shop.currency)}</b>}
                   <span className="s-btn s-btn-ghost s-btn-sm">{t('sf2.book')}</span>
                 </Link>
               ))}
@@ -126,7 +126,7 @@ export default async function Storefront(props: { params: Promise<{ slug: string
               <ul className="flex flex-wrap gap-2">
                 {addons.map(a => (
                   <li key={a.id} className="s-chip !h-auto py-1.5">
-                    + {pick(lang, a.name, a.nameZh)} · {fmtDuration(a.durationMin, lang)}{shop.showPrices && a.priceCents != null ? ` · ${money(a.priceCents)}` : ''}
+                    + {pick(lang, a.name, a.nameZh)} · {fmtDuration(a.durationMin, lang)}{shop.showPrices && a.priceCents != null ? ` · ${money(a.priceCents, shop.currency)}` : ''}
                   </li>
                 ))}
               </ul>
@@ -153,7 +153,7 @@ export default async function Storefront(props: { params: Promise<{ slug: string
           </section>
         )}
 
-        {hasNailTools(shop.industry) && (
+        {shopHasNailTools(shop) && (
           <section aria-labelledby="design-h">
             {/* folded: a card that opens the 3D studio on its own page, so the shop page stays light */}
             <Link href={`/${shop.slug}/design`} className="group grid overflow-hidden no-underline sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"

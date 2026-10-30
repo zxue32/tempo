@@ -1,4 +1,5 @@
 // Starter service menus by industry. Owners edit names, times and prices after onboarding.
+import { legacyToIndustries } from './industries/registry'
 /** Every kind of appointment shop the platform opens. Order = the order owners see when they sign up. */
 export const INDUSTRIES = ['nail', 'hair', 'barber', 'spa', 'beauty', 'tattoo', 'pet', 'pilates', 'fitness', 'both', 'other'] as const
 export type Industry = (typeof INDUSTRIES)[number]
@@ -18,10 +19,10 @@ export const CATEGORIES: Record<Industry, string[]> = {
   other: ['service', 'other'],
 }
 
-/** The nail try-on and nail colour board. */
-export const hasNailTools = (i: Industry) => i === 'nail' || i === 'both'
-/** The hair colour board. */
-export const hasHairTools = (i: Industry) => i === 'hair' || i === 'barber' || i === 'both'
+/** Legacy single-value check; pages use `shopHasNailTools(shop)` so composite shops work (CORE-02). */
+export const hasNailTools = (i: Industry) => legacyToIndustries(i).includes('nail')
+/** Legacy single-value check; pages use `shopHasHairTools(shop)`. */
+export const hasHairTools = (i: Industry) => legacyToIndustries(i).some(k => k === 'hair' || k === 'barber')
 
 export type TemplateService = {
   key: string

@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { hasNailTools } from '@/lib/templates'
+import { shopHasNailTools } from '@/lib/industries/shop'
 import { loadStorefront } from '@/lib/storefront'
 import { loadCatalog } from '@/lib/data/catalog'
 import { makeT, pick } from '@/lib/i18n'
@@ -14,7 +14,7 @@ export default async function DesignPage(props: { params: Promise<{ slug: string
   const { slug } = await props.params
   const sp = await props.searchParams
   const { shop, preview, open, lang } = await loadStorefront(slug)
-  if (!hasNailTools(shop.industry)) notFound()
+  if (!shopHasNailTools(shop)) notFound()
   const t = makeT(lang)
   if (!open) {
     return (

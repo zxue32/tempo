@@ -1,6 +1,8 @@
 import 'server-only'
 import { sql } from '../db'
 import type { Service, Staff, Skill, Break } from '../types'
+import { unbookableReason, type IndustryKey } from '../industries/registry'
+import { shopIndustries } from '../industries/shop'
 
 export async function listStaff(shopId: string, opts: { activeOnly?: boolean } = {}): Promise<Staff[]> {
   const rows = await sql<Staff[]>`
@@ -12,10 +14,11 @@ export async function listStaff(shopId: string, opts: { activeOnly?: boolean } =
 
 export async function listServices(shopId: string, opts: { activeOnly?: boolean; onlineOnly?: boolean } = {}): Promise<Service[]> {
   return sql<Service[]>`
-    select * from app.services where shop_id = ${shopId}
-      ${opts.activeOnly ? sql`and active` : sql``}
-      ${opts.onlineOnly ? sql`and online` : sql``}
-    order by kind desc, sort, created_at
+    select s.*, (select v.id from app.service_versions v where v.service_id = s.id and v.version = s.current_version) as version_id
+    from app.services s where s.shop_id = ${shopId}
+      ${opts.activeOnly ? sql`and s.active` : sql``}
+      ${opts.onlineOnly ? sql`and s.online` : sql``}
+    order by s.kind desc, s.sort, s.created_at
   `
 }
 
@@ -62,11 +65,14 @@ export async function updateStaff(shopId: string, staffId: string, input: Partia
 }
 
 /** Removes a staff member; if they have booking history they are deactivated instead. */
-export async function deleteStaff(shopId: string, staffId: string): Promise<'deleted' | 'deactivated'> {
-  const used = await sql`select 1 from app.bookings where staff_id = ${staffId} and kind <> 'block' limit 1`
+export async function deleteStaff(shopId: string, staffId: string): Promise<'deleted' | 'deactivated' | 'not_found'> {
+  // everything below is scoped to this shop: a staff id from another shop changes nothing (CORE-04)
+  const [own] = await sql`select 1 from app.staff where id = ${staffId} and shop_id = ${shopId}`
+  if (!own) return 'not_found'
+  const used = await sql`select 1 from app.bookings where staff_id = ${staffId} and shop_id = ${shopId} and kind <> 'block' limit 1`
   if (used.length) {
     await sql`update app.staff set active = false, bookable_online = false where id = ${staffId} and shop_id = ${shopId}`
-    await sql`delete from app.shifts where staff_id = ${staffId} and date >= current_date`
+    await sql`delete from app.shifts where staff_id = ${staffId} and shop_id = ${shopId} and date >= current_date`
     return 'deactivated'
   }
   await sql`delete from app.staff where id = ${staffId} and shop_id = ${shopId}`
@@ -150,12 +156,27 @@ export async function reorderServices(shopId: string, ids: string[]) {
 }
 
 /** Everything the booking pages need about a shop's menu and team. */
+async function industriesOf(shopId: string): Promise<IndustryKey[]> {
+  const [row] = await sql<{ industry: string; industries: IndustryKey[] }[]>`
+    select s.industry, (select coalesce(array_agg(i.industry order by i.is_primary desc, i.industry), '{}') from app.shop_industries i where i.shop_id = s.id) as industries
+    from app.shops s where s.id = ${shopId}
+  `
+  return row ? shopIndustries(row) : []
+}
+
+/**
+ * The shop's menu, team and skills. For customers, services whose industry the shop can't take online bookings
+ * for are left out (their ids are in `disabled`, so the booking engine can say why instead of "removed").
+ */
 export async function loadCatalog(shopId: string, opts: { forCustomers?: boolean } = {}) {
-  const [services, staff, skills] = await Promise.all([
+  const [all, staff, skills, industries] = await Promise.all([
     listServices(shopId, { activeOnly: true, onlineOnly: opts.forCustomers }),
     listStaff(shopId, { activeOnly: true }),
     listSkills(shopId),
+    industriesOf(shopId),
   ])
-  return { services, staff, skills }
+  const disabled = new Set<string>()
+  const services = opts.forCustomers ? all.filter(s => (unbookableReason(industries, s.industry) ? (disabled.add(s.id), false) : true)) : all
+  return { services, staff, skills, industries, disabled }
 }
 export type Catalog = Awaited<ReturnType<typeof loadCatalog>>

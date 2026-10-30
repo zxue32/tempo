@@ -4,7 +4,7 @@ import type { Shop, Break } from './types'
 import type { Catalog } from './data/catalog'
 import { hoursOn, type SpecialDay } from './data/schedule'
 import { findSlots, type EngineDay, type EngineStaff, type EngineService, type EngineResource, type GuestRequest } from './engine'
-import { nowInZone, diffDays, addDays } from './tz'
+import { nowInZone, diffDays, addDays, dstRanges } from './tz'
 
 export type DayOptions = {
   /** customers: lead time, booking window and online-only staff/services apply */
@@ -88,6 +88,12 @@ export async function buildDays(q: Q, shop: Shop, catalog: Catalog, dates: strin
 
 export type DaySummary = { date: string; closed: boolean; count: number }
 
+/** Slots on the day's clock change that don't name exactly one instant are never offered (CORE-03). */
+function realSlots<T extends { start: number }>(slots: T[], date: string, tz: string): T[] {
+  const odd = dstRanges(date, tz)
+  return odd.length ? slots.filter(s => !odd.some(r => s.start >= r.from && s.start < r.to)) : slots
+}
+
 /** Slot counts for a range of dates plus the slots of one selected date. */
 export async function availability(shop: Shop, catalog: Catalog, guests: GuestRequest[], from: string, days: number, selected: string | null, opts: DayOptions & { ignore?: string[] }) {
   const dates = Array.from({ length: days }, (_, i) => addDays(from, i))
@@ -96,7 +102,7 @@ export async function availability(shop: Shop, catalog: Catalog, guests: GuestRe
   const summaries: DaySummary[] = []
   let selectedSlots: ReturnType<typeof findSlots> = []
   for (const d of built) {
-    const slots = findSlots(d, guests, { ignore: opts.ignore, includeOffline: !opts.forCustomers })
+    const slots = realSlots(findSlots(d, guests, { ignore: opts.ignore, includeOffline: !opts.forCustomers }), d.date, shop.timezone)
     if (d.date === selected) selectedSlots = slots
     if (d.date >= from && d.date <= addDays(from, days - 1)) summaries.push({ date: d.date, closed: !d.hours, count: slots.length })
   }
@@ -109,7 +115,7 @@ export async function nextAvailable(shop: Shop, catalog: Catalog, guests: GuestR
     const dates = Array.from({ length: Math.min(14, limit - off) }, (_, i) => addDays(from, off + i))
     const built = await buildDays(sql, shop, catalog, dates, opts)
     for (const d of built) {
-      if (findSlots(d, guests, { ignore: opts.ignore, includeOffline: !opts.forCustomers }).length) return d.date
+      if (realSlots(findSlots(d, guests, { ignore: opts.ignore, includeOffline: !opts.forCustomers }), d.date, shop.timezone).length) return d.date
     }
   }
   return null

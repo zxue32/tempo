@@ -11,6 +11,7 @@ import type { ShopStatus } from '@/lib/types'
 import { createResetToken } from '@/lib/accounts'
 import { sql } from '@/lib/db'
 import { env } from '@/lib/env'
+import { logError } from '@/lib/log'
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string; detail?: string }
 
@@ -33,7 +34,7 @@ export async function reviewShopAction(shopId: string, decision: Decision, note:
   const clean = note.trim().slice(0, 2000) || null
   if (d.note && !clean) return { ok: false, error: 'note_required' }
   const updated = await adminSetStatus(shopId, d.to, admin.id, clean)
-  try { await mailOwnerReview(d.mail, updated, clean) } catch (e) { console.error('review mail failed', e) }
+  try { await mailOwnerReview(d.mail, updated, clean) } catch (e) { logError('review-mail', e) }
   revalidatePath('/admin', 'layout')
   return { ok: true }
 }

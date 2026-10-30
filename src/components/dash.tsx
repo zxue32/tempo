@@ -49,6 +49,9 @@ export function errText(t: T, error: string, detail?: string | null): string {
   if (error === 'outside_shift') return t(detail && ['shift', 'break', 'off', 'closed', 'skill'].includes(detail) ? (`cal.why.${detail}` as DictKey) : 'cal.why.shift')
   if (error === 'bad_time') return t('sc.badTime', detail || '')
   if (error === 'service_gone') return t('bf.err.service_gone')
+  if (error === 'capability_disabled') return t('bf.err.capability_disabled')
+  if (error === 'market_unsupported') return t('bf.err.market_unsupported')
+  if (error === 'invalid' && (detail === 'dst_gap' || detail === 'dst_ambiguous')) return t(`bf.err.${detail}`)
   if (error === 'invalid') return t('bf.err.invalid') + (detail ? ` (${detail})` : '')
   if (error === 'duplicate_phone') return t('c.phone') + ' ✕'
   return t('c.error')

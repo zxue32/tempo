@@ -1,6 +1,8 @@
 export type Lang = 'zh' | 'en'
 export type { Industry } from './templates'
 import type { Industry } from './templates'
+import type { IndustryKey } from './industries/registry'
+import type { MarketKey, CurrencyCode } from './markets'
 export type ShopStatus = 'draft' | 'pending' | 'changes' | 'live' | 'rejected' | 'suspended'
 export type DayHours = { closed: boolean; open: number; close: number }
 export type Hours = Record<string, DayHours>
@@ -10,7 +12,14 @@ export type Shop = {
   id: string
   slug: string
   status: ShopStatus
+  /** Legacy single value, still written by the settings form; mirrored into `app.shop_industries` (CORE-02). */
   industry: Industry
+  /** From `app.shop_industries`, primary first. Present on shop loads; read it through `shopIndustries()`. */
+  industries?: IndustryKey[]
+  /** Where the shop trades (CORE-03). Read through `marketOf()` / `currencyOf()`. */
+  marketKey: MarketKey
+  /** Settlement currency; every price of the shop is in minor units of it. */
+  currency: CurrencyCode
   name: string
   nameZh: string | null
   aboutEn: string | null
@@ -121,6 +130,10 @@ export type Service = {
   resourceId: string | null
   questionEn: string | null
   questionZh: string | null
+  /** The industry this service belongs to (CORE-02). */
+  industry: IndustryKey
+  /** Its current immutable version (CORE-05); bookings point at the version they were made with. */
+  versionId?: string | null
 }
 
 export type Resource = { id: string; shopId: string; name: string; nameZh: string | null; quantity: number; sort: number }
@@ -152,10 +165,14 @@ export type Shift = { staffId: string; date: string; startMin: number; endMin: n
 export type BookingStatus = 'confirmed' | 'completed' | 'no_show' | 'cancelled'
 export type BookingKind = 'online' | 'walkin' | 'phone' | 'block'
 
-export type BookingItem = { id?: string; serviceId: string | null; kind: 'service' | 'addon'; name: string; nameZh: string | null; durationMin: number; priceCents: number | null; sort: number }
+export type BookingItem = { id?: string; serviceId: string | null; kind: 'service' | 'addon'; name: string; nameZh: string | null; durationMin: number; priceCents: number | null; sort: number
+  /** the immutable service version this was booked with (CORE-05) */
+  serviceVersionId?: string | null }
 
 export type Booking = {
   id: string
+  /** the shop still has to check the client's answers (CORE-05); only on day views */
+  reviewPending?: boolean
   shopId: string
   staffId: string
   customerId: string | null

@@ -15,6 +15,7 @@ import { ConfirmAttendance } from './ConfirmAttendance'
 import { RateVisit } from './RateVisit'
 import { env } from '@/lib/env'
 import { emailConfigured } from '@/lib/email'
+import { intakeFor } from '@/lib/data/forms'
 
 export const metadata = { title: 'Booking', robots: { index: false } }
 
@@ -46,6 +47,9 @@ export default async function ManagePage(props: { params: Promise<{ token: strin
   const manageUrl = `${env.siteUrl}/b/${token}`
   const gHref = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${gcal(first.startsAt)}/${gcal(new Date(Math.max(...show.map(b => b.endsAt.getTime()))))}&details=${encodeURIComponent(`${t('mg.code')}: ${first.code}\n${manageUrl}`)}&location=${encodeURIComponent(where)}`
   const isNew = sp.new === '1' && status === 'confirmed'
+  // answers the shop still has to look at: this is a request, never shown as confirmed (CORE-05)
+  const reviews = await intakeFor(shop.id, show.map(b => b.id))
+  const pending = status === 'confirmed' && show.some(b => reviews.get(b.id)?.reviewState === 'pending')
 
   // qualified staff for a single-guest reschedule
   const single = active.length === 1 ? active[0] : null
@@ -62,14 +66,15 @@ export default async function ManagePage(props: { params: Promise<{ token: strin
         <StoreHeader shop={shop} lang={lang} />
         <main className="mx-auto flex max-w-xl flex-col gap-5 px-4 pb-20 pt-2">
           <div className="flex flex-col gap-2">
-            {isNew && (
+            {isNew && !pending && (
               <span className="grid h-12 w-12 place-items-center rounded-full" style={{ background: 'var(--s-accent)', color: 'var(--s-accent-ink)' }} aria-hidden="true">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
               </span>
             )}
-            <span className="text-[12px] font-bold uppercase tracking-[.14em] s-muted">{isNew ? t('mg.booked') : t('mg.yourBooking')}</span>
+            <span className="text-[12px] font-bold uppercase tracking-[.14em] s-muted">{pending ? t('mg.requested') : isNew ? t('mg.booked') : t('mg.yourBooking')}</span>
             <h1 className="s-display text-[32px] leading-tight">{fmtDate(first.date, lang, { weekday: 'long', month: 'long', day: 'numeric' })}<br />{fmtTime(first.startMin, lang)}–{fmtTime(end, lang)}</h1>
             {status === 'cancelled' && <p className="s-chip self-start !h-auto py-1">{first.cancelledBy === 'shop' ? t('mg.cancelledBy.shop') : t('mg.cancelled')}{first.cancelReason ? ` · ${first.cancelReason}` : ''}</p>}
+            {pending && <p className="s-card self-start px-3 py-2 text-[14.5px] font-semibold" role="status" data-review="pending">{t('mg.pendingReview')}</p>}
             {status === 'completed' && <p className="s-chip self-start">{t('mg.completed')}</p>}
             {status === 'no_show' && <p className="s-chip self-start">{t('mg.noShow')}</p>}
             {isNew && (emailConfigured() && first.guestEmail
@@ -85,7 +90,7 @@ export default async function ManagePage(props: { params: Promise<{ token: strin
                   <b className="block">{staffName(b.staffId)}{show.length > 1 && b.guestName ? <span className="font-normal s-muted"> · {b.guestName}</span> : null}</b>
                   <span className="block text-[13.5px] s-muted">{(b.items ?? []).map(i => pick(lang, i.name, i.nameZh)).join(' + ')} · {fmtDuration(b.durationMin, lang)}</span>
                 </div>
-                {shop.showPrices && b.estPriceCents ? <span className="tnum text-[14px]">{money(b.estPriceCents)}</span> : null}
+                {shop.showPrices && b.estPriceCents ? <span className="tnum text-[14px]">{money(b.estPriceCents, shop.currency)}</span> : null}
               </div>
             ))}
             <div className="flex items-center justify-between gap-3 border-t border-dashed p-4 s-line">
@@ -103,7 +108,7 @@ export default async function ManagePage(props: { params: Promise<{ token: strin
             </div>
           )}
 
-          {status === 'confirmed' && first.startsAt.getTime() > Date.now() && (first.startsAt.getTime() - Date.now() < 72 * 3600000 || sp.confirm === '1' || !!first.clientConfirmedAt) && (
+          {status === 'confirmed' && !pending && first.startsAt.getTime() > Date.now() && (first.startsAt.getTime() - Date.now() < 72 * 3600000 || sp.confirm === '1' || !!first.clientConfirmedAt) && (
             <ConfirmAttendance token={token} confirmed={active.every(b => !!b.clientConfirmedAt)} highlight={sp.confirm === '1'} />
           )}
 

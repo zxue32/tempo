@@ -1,4 +1,4 @@
-import { hasNailTools } from '@/lib/templates'
+import { shopHasNailTools, shopIndustries } from '@/lib/industries/shop'
 import { emailConfigured } from '@/lib/email'
 import { loadStorefront } from '@/lib/storefront'
 import { loadCatalog } from '@/lib/data/catalog'
@@ -10,6 +10,7 @@ import { sql } from '@/lib/db'
 import { isDateString } from '@/lib/tz'
 import { isNailDesign } from '@/components/NailArt'
 import { listPalette } from '@/lib/data/rules'
+import { activeForms } from '@/lib/data/forms'
 
 export const metadata = { robots: { index: false } }
 
@@ -29,7 +30,7 @@ export default async function BookPage(props: { params: Promise<{ slug: string }
   const catalog = await loadCatalog(shop.id, { forCustomers: true })
   const staff = catalog.staff.filter(s => s.active && s.bookableOnline)
   const flowShop: FlowShop = {
-    slug: shop.slug, industry: shop.industry, maxGuests: shop.maxGuests, allowAnyStaff: shop.allowAnyStaff, maxDays: shop.maxDays,
+    slug: shop.slug, industry: shop.industry, industries: shopIndustries(shop), currency: shop.currency, maxGuests: shop.maxGuests, allowAnyStaff: shop.allowAnyStaff, maxDays: shop.maxDays,
     leadMinutes: shop.leadMinutes, cutoffMinutes: shop.cancelCutoffMinutes, showPrices: shop.showPrices, live: shop.status === 'live',
     note: pick(lang, shop.bookingNoteEn, shop.bookingNoteZh) || null, phone: shop.phone, waitlist: shop.waitlistEnabled,
   }
@@ -46,7 +47,8 @@ export default async function BookPage(props: { params: Promise<{ slug: string }
     date: isDateString(one(sp.date)) ? one(sp.date) : null, look: look ?? null, design,
     hairColor: hair ? { id: hair.id, label: pick(lang, hair.name, hair.nameZh) + (hair.code ? ` ${hair.code}` : ''), hex: hair.hex } : null,
   }
-  const nailColors = hasNailTools(shop.industry) ? await listPalette(shop.id, 'nail', true) : []
+  const nailColors = shopHasNailTools(shop) ? await listPalette(shop.id, 'nail', true) : []
+  const forms = await activeForms(shop.id)
   return (
     <div className="min-h-screen">
       {preview && shop.status !== 'live' && <PreviewBanner text={t('sf2.previewBanner')} />}
@@ -55,11 +57,12 @@ export default async function BookPage(props: { params: Promise<{ slug: string }
         shop={flowShop}
         emailOn={emailConfigured()}
         today={nowInZone(shop.timezone).date}
-        services={catalog.services.map(s => ({ id: s.id, kind: s.kind, category: s.category, appliesTo: s.appliesTo, name: s.name, nameZh: s.nameZh, descEn: s.descEn, descZh: s.descZh, durationMin: s.durationMin, priceCents: s.priceCents, priceFrom: s.priceFrom, questionEn: s.questionEn, questionZh: s.questionZh }))}
+        services={catalog.services.map(s => ({ id: s.id, kind: s.kind, category: s.category, industry: s.industry, appliesTo: s.appliesTo, name: s.name, nameZh: s.nameZh, descEn: s.descEn, descZh: s.descZh, durationMin: s.durationMin, priceCents: s.priceCents, priceFrom: s.priceFrom, questionEn: s.questionEn, questionZh: s.questionZh }))}
         staff={staff.map(s => ({ id: s.id, name: s.name, nameZh: s.nameZh, bioEn: s.bioEn, bioZh: s.bioZh, color: s.color, photoUrl: s.photoUrl }))}
         skills={catalog.skills.filter(k => staff.some(s => s.id === k.staffId))}
         initial={initial}
         swatches={nailColors.map(c => ({ hex: c.hex, name: c.name, nameZh: c.nameZh, code: c.code }))}
+        forms={[...forms.values()].map(f => ({ id: f.id, industry: f.industry, schema: f.schema }))}
       />
     </div>
   )

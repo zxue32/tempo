@@ -17,11 +17,14 @@ function sniff(buf: Uint8Array): string | null {
 
 /**
  * Stores an image and returns its URL.
- * With SUPABASE_URL + SUPABASE_SECRET_KEY: Supabase Storage (public bucket STORAGE_BUCKET, default "media").
- * Otherwise: the database (app.media), served by /media/<path> with long-lived caching.
+ * Public pictures: with SUPABASE_URL + SUPABASE_SECRET_KEY, Supabase Storage (public bucket STORAGE_BUCKET,
+ * default "media"); otherwise the database (app.media), served by /media/<path> with long-lived caching.
+ * Private pictures (what a customer sends with a booking) always go to the database, where /media/<path>
+ * shows them only to the shop's own people (CORE-04).
  * `folder` is "<kind>/<shopId>", e.g. "gallery/0b6c…".
  */
-export async function storeImage(file: File, folder: string): Promise<string> {
+export async function storeImage(file: File, folder: string, opts: { visibility?: 'public' | 'private' } = {}): Promise<string> {
+  const visibility = opts.visibility ?? 'public'
   if (file.size > MAX_UPLOAD_BYTES) throw new UploadError('too_large')
   const buf = new Uint8Array(await file.arrayBuffer())
   const type = sniff(buf)
@@ -31,7 +34,7 @@ export async function storeImage(file: File, folder: string): Promise<string> {
   const name = `${cleanFolder}/${randomBytes(16).toString('hex')}.${TYPES[type]}`
   const service = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
   const bucket = process.env.STORAGE_BUCKET || 'media'
-  if (env.supabaseUrl && service) {
+  if (visibility === 'public' && env.supabaseUrl && service) {
     // new-style secret keys (sb_secret_…) go in the apikey header only; legacy service_role JWTs also as Bearer
     const auth: Record<string, string> = service.startsWith('sb_') ? { apikey: service } : { apikey: service, Authorization: `Bearer ${service}` }
     const res = await fetch(`${env.supabaseUrl}/storage/v1/object/${bucket}/${name}`, {
@@ -44,8 +47,8 @@ export async function storeImage(file: File, folder: string): Promise<string> {
   }
   const shopId = cleanFolder.split('/')[1]
   await sql`
-    insert into app.media (path, shop_id, mime, size, bytes)
-    values (${name}, (select id from app.shops where id::text = ${shopId}), ${type}, ${buf.length}, ${Buffer.from(buf)})
+    insert into app.media (path, shop_id, mime, size, bytes, visibility)
+    values (${name}, (select id from app.shops where id::text = ${shopId}), ${type}, ${buf.length}, ${Buffer.from(buf)}, ${visibility})
   `
   return `/media/${name}`
 }

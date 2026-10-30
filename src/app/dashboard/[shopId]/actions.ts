@@ -8,7 +8,15 @@ import { sql } from '@/lib/db'
 import { getShop, submitShop, updateShop, readiness, type ShopPatch } from '@/lib/data/shops'
 import { createStaff, updateStaff, deleteStaff, setStaffSkills, reorderStaff, createService, updateService, deleteService, reorderServices, listStaff } from '@/lib/data/catalog'
 import { saveShifts, upsertSpecialDay, deleteSpecialDay } from '@/lib/data/schedule'
-import { createBooking, shopMove, shopSetStatus, shopSetItems, shopUpdateDetails, shopMarkStarted, getBooking, bookingEvents, BookingError, normPhone } from '@/lib/bookings'
+import { createBooking, shopMove, shopSetStatus, shopSetItems, shopUpdateDetails, shopMarkStarted, getBooking, bookingEvents, BookingError } from '@/lib/bookings'
+import { parsePhone, phoneKey } from '@/lib/phone'
+import { marketOf } from '@/lib/markets'
+import { publicImageFor, refPhotoFor } from '@/lib/media'
+import { intakeFor, formById, reviewIntake, saveForm } from '@/lib/data/forms'
+import { answerText, FormError } from '@/lib/forms'
+import { shopIndustries } from '@/lib/industries/shop'
+import { audit } from '@/lib/audit'
+import { logError } from '@/lib/log'
 import { saveResource, deleteResource, addGalleryItem, updateGalleryItem, deleteGalleryItem, reorderGallery, listPalette, saveSwatch, deleteSwatch, reorderPalette } from '@/lib/data/rules'
 import { integrityCheck } from '@/lib/data/pilot'
 import { savePreferences } from '@/lib/data/insights'
@@ -29,11 +37,17 @@ const fail = (error: string, detail?: string): { ok: false; error: string; detai
 
 function bookingFail(e: unknown) {
   if (e instanceof BookingError) return fail(e.code, e.detail)
-  console.error(e)
+  logError('action', e)
   return fail('server')
 }
 
+/** Phone numbers typed in the dashboard are read in the shop's own region (CORE-03). */
+async function phoneRegionOf(shopId: string) {
+  return marketOf((await getShop(shopId)) ?? {}).phoneRegion
+}
+
 // ---------------------------------------------------------------- review
+
 
 export async function submitForReview(shopId: string): Promise<Result<{ status: string; issues: string[] }>> {
   const { user } = await requireShop(shopId, 'owner')
@@ -92,7 +106,7 @@ export async function bookingDetail(shopId: string, bookingId: string) {
   if (member.role === 'staff' && b.staffId !== member.staffId) return null
   const [events, group, stats, cust] = await Promise.all([
     bookingEvents(b.id),
-    b.groupId ? sql<{ id: string; staffId: string }[]>`select id, staff_id from app.bookings where group_id = ${b.groupId}` : Promise.resolve([]),
+    b.groupId ? sql<{ id: string; staffId: string }[]>`select id, staff_id from app.bookings where group_id = ${b.groupId} and shop_id = ${shopId}` : Promise.resolve([]),
     b.customerId
       ? sql<{ visits: number; noShows: number }[]>`
           select count(*) filter (where status = 'completed')::int as visits, count(*) filter (where status = 'no_show')::int as no_shows
@@ -100,7 +114,61 @@ export async function bookingDetail(shopId: string, bookingId: string) {
       : Promise.resolve([{ visits: 0, noShows: 0 }]),
     b.customerId ? sql<{ preferences: Preferences | null }[]>`select preferences from app.customers where id = ${b.customerId}` : Promise.resolve([]),
   ])
-  return { booking: b, events, groupSize: group.length || 1, stats: stats[0], reminderSent: !!b.reminderSentAt, prefs: cust[0]?.preferences ?? null }
+  return { booking: b, events, groupSize: group.length || 1, stats: stats[0], reminderSent: !!b.reminderSentAt, prefs: cust[0]?.preferences ?? null, intake: await intakeView(shopId, b.id) }
+}
+
+/** The client's answers as the shop reads them: question, answer, photos; personal ones marked (CORE-05). */
+async function intakeView(shopId: string, bookingId: string) {
+  const r = (await intakeFor(shopId, [bookingId])).get(bookingId)
+  if (!r) return null
+  const form = await formById(shopId, r.formId)
+  const rows = (form?.schema.fields ?? []).filter(f => f.key in r.answers).map(f => {
+    const v = r.answers[f.key]
+    return {
+      key: f.key, label: f.label, sensitive: !!f.sensitive,
+      text: f.type === 'photo' ? null : { en: answerText(f, v, 'en'), zh: answerText(f, v, 'zh') },
+      photos: f.type === 'photo' && Array.isArray(v) ? (v as string[]).filter(u => refPhotoFor(u, shopId)) : [],
+    }
+  })
+  return { reviewState: r.reviewState, version: form?.version ?? null, rows }
+}
+
+/** Save the shop's booking questions for one of its industries as a new version, switched on or off (CORE-05). */
+export async function saveIntakeFormAction(shopId: string, industry: string, schema: unknown, active: boolean): Promise<Result<{ version: number }>> {
+  const { user } = await requireShop(shopId, 'manager')
+  const shop = (await getShop(shopId))!
+  if (!shopIndustries(shop).includes(industry as never)) return fail('invalid', 'industry')
+  try {
+    const f = await saveForm(shopId, industry, schema, !!active, user.id)
+    await audit(sql, { shopId, actorUser: user.id, action: 'form.save', targetType: 'intake_form', targetId: f.id, detail: { industry, version: f.version, active: f.active, fields: f.schema.fields.length } })
+    revalidatePath(`/dashboard/${shopId}/rules`)
+    return { ok: true, version: f.version }
+  } catch (e) {
+    if (e instanceof FormError) return fail('invalid', e.field ?? e.code)
+    if ((e as { code?: string }).code === '23505') return fail('conflict')
+    logError('form', e)
+    return fail('server')
+  }
+}
+
+/** The shop checked a client's answers: confirm the booking, or decline it with a reason the client receives. */
+export async function reviewIntakeAction(shopId: string, bookingId: string, decision: 'approve' | 'decline', reason?: string): Promise<Result> {
+  const { user } = await requireShop(shopId, 'manager')
+  if (decision !== 'approve' && decision !== 'decline') return fail('invalid')
+  const why = reason?.trim().slice(0, 500) || null
+  if (decision === 'decline' && !why) return fail('invalid', 'reason')
+  const shop = (await getShop(shopId))!
+  try {
+    await reviewIntake(shop, bookingId, decision, user.id, why)
+  } catch (e) {
+    return bookingFail(e)
+  }
+  await audit(sql, { shopId, actorUser: user.id, action: decision === 'approve' ? 'intake.approve' : 'intake.decline', targetType: 'booking', targetId: bookingId })
+  const b = (await getBooking(shopId, bookingId))!
+  await mailCustomer(decision === 'approve' ? 'confirmed' : 'cancelled_by_shop', shop, [b], await listStaff(shopId), why).catch(e => logError('mail', e))
+  if (decision === 'decline') await notifyWaitlist(shop, b.date).catch(e => logError('waitlist', e))
+  revalidatePath(`/dashboard/${shopId}`)
+  return { ok: true }
 }
 
 export async function setBookingStatusAction(shopId: string, bookingId: string, status: BookingStatus, opts: { reason?: string; notify?: boolean } = {}): Promise<Result> {
@@ -116,7 +184,7 @@ export async function setBookingStatusAction(shopId: string, bookingId: string, 
     if (status === 'cancelled' && opts.notify && updated.guestEmail && updated.kind !== 'block') {
       await mailCustomer('cancelled_by_shop', shop, [updated], await listStaff(shop.id), reason)
     }
-    if (status === 'cancelled') await notifyWaitlist(shop, updated.date).catch(e => console.error('waitlist', e))
+    if (status === 'cancelled') await notifyWaitlist(shop, updated.date).catch(e => logError('waitlist', e))
     return { ok: true }
   } catch (e) {
     return bookingFail(e)
@@ -164,7 +232,7 @@ export async function updateBookingDetailsAction(shopId: string, bookingId: stri
 
 export async function findCustomerByPhone(shopId: string, phone: string) {
   await requireShop(shopId, 'manager')
-  const p = normPhone(phone)
+  const p = phoneKey(phone, await phoneRegionOf(shopId))
   if (p.length < 7) return null
   const [c] = await sql<{ id: string; name: string; email: string | null; visits: number; preferences: Preferences | null }[]>`
     select c.id, c.name, c.email, c.preferences, (select count(*)::int from app.bookings b where b.customer_id = c.id and b.status = 'completed') as visits
@@ -199,6 +267,8 @@ export async function saveStaffAction(shopId: string, staffId: string | null, in
   const p = staffSchema.safeParse(input)
   if (!p.success) return fail('invalid', p.error.issues[0]?.path.join('.'))
   const d = { ...p.data, nameZh: p.data.nameZh || null, bioEn: p.data.bioEn || null, bioZh: p.data.bioZh || null }
+  // a team photo is public: never a customer's private photo or another shop's upload (CORE-04)
+  if (d.photoUrl && !publicImageFor(d.photoUrl, shopId)) return fail('invalid', 'photoUrl')
   if (d.defaultWeek) for (const v of Object.values(d.defaultWeek)) if (!(v.end > v.start)) return fail('invalid', 'defaultWeek')
   if (staffId) {
     await updateStaff(shopId, staffId, d)
@@ -211,8 +281,11 @@ export async function saveStaffAction(shopId: string, staffId: string | null, in
 }
 
 export async function deleteStaffAction(shopId: string, staffId: string): Promise<Result<{ result: string }>> {
-  await requireShop(shopId, 'manager')
-  return { ok: true, result: await deleteStaff(shopId, staffId) }
+  const { user } = await requireShop(shopId, 'manager')
+  const result = await deleteStaff(shopId, staffId)
+  if (result === 'not_found') return fail('not_found')
+  await audit(sql, { shopId, actorUser: user.id, action: `staff.${result === 'deleted' ? 'delete' : 'deactivate'}`, targetType: 'staff', targetId: staffId })
+  return { ok: true, result }
 }
 
 export async function reorderStaffAction(shopId: string, ids: string[]): Promise<Result> {
@@ -246,12 +319,15 @@ export async function inviteStaffAction(shopId: string, staffId: string, email: 
   const link = `${env.siteUrl}/join/${token}`
   const emailed = !!e && emailConfigured()
   if (emailed) await mailStaffInvite(shop, e, shop.defaultLang, link)
+  await audit(sql, { shopId, actorUser: user.id, action: 'member.invite', targetType: 'staff', targetId: staffId, detail: { role: role === 'manager' ? 'manager' : 'staff', emailed } })
   return { ok: true, link, emailed }
 }
 
 export async function removeMemberAction(shopId: string, userId: string): Promise<Result> {
-  await requireShop(shopId, 'manager')
-  await sql`delete from app.shop_members where shop_id = ${shopId} and user_id = ${userId} and role <> 'owner'`
+  const { user } = await requireShop(shopId, 'manager')
+  if (!uuid.safeParse(userId).success) return fail('invalid')
+  const gone = await sql`delete from app.shop_members where shop_id = ${shopId} and user_id = ${userId} and role <> 'owner' returning user_id`
+  if (gone.length) await audit(sql, { shopId, actorUser: user.id, action: 'member.remove', targetType: 'user', targetId: userId })
   return { ok: true }
 }
 
@@ -393,6 +469,7 @@ export async function saveSettingsAction(shopId: string, input: z.input<typeof s
   if (d.hours) for (const h of Object.values(d.hours)) if (!h.closed && !(h.close > h.open)) return fail('bad_time')
   if (d.mapUrl && !/^https?:\/\//.test(d.mapUrl)) return fail('invalid', 'mapUrl')
   if (d.email && !emailRe.test(d.email)) return fail('invalid', 'email')
+  for (const k of ['logoUrl', 'coverUrl'] as const) if (d[k] && !publicImageFor(d[k], shopId)) return fail('invalid', k)
   const toNull = (v: string | null | undefined) => (v === undefined ? undefined : v || null)
   const patch: ShopPatch = { ...d } as ShopPatch
   for (const k of ['nameZh', 'aboutEn', 'aboutZh', 'phone', 'email', 'address', 'city', 'mapUrl', 'instagram', 'bookingNoteEn', 'bookingNoteZh'] as const) {
@@ -412,7 +489,7 @@ export async function uploadImageAction(shopId: string, form: FormData): Promise
     return { ok: true, url }
   } catch (e) {
     if (e instanceof UploadError) return fail('upload', e.message)
-    console.error(e)
+    logError('upload', e)
     return fail('server')
   }
 }
@@ -420,16 +497,25 @@ export async function uploadImageAction(shopId: string, form: FormData): Promise
 // ---------------------------------------------------------------- customers
 
 export async function saveCustomerAction(shopId: string, id: string, d: { name: string; phone: string; email: string; notes: string; blocked: boolean }): Promise<Result> {
-  await requireShop(shopId, 'manager')
+  const { user } = await requireShop(shopId, 'manager')
   const p = z.object({ name: z.string().trim().min(1).max(80), phone: z.string().trim().max(30), email: z.string().trim().max(120), notes: z.string().max(2000), blocked: z.boolean() }).safeParse(d)
   if (!p.success) return fail('invalid')
   const email = p.data.email && emailRe.test(p.data.email) ? p.data.email.toLowerCase() : null
+  const region = await phoneRegionOf(shopId)
   try {
+    const [before] = await sql<{ name: string; phone: string | null; email: string | null; notes: string | null; blocked: boolean }[]>`
+      select name, phone, email, notes, blocked from app.customers where id = ${id} and shop_id = ${shopId}`
+    if (!before) return fail('not_found')
     await sql`
-      update app.customers set name = ${p.data.name}, phone = ${p.data.phone || null}, phone_norm = ${normPhone(p.data.phone)},
+      update app.customers set name = ${p.data.name}, phone = ${p.data.phone || null}, phone_norm = ${phoneKey(p.data.phone, region)},
+        phone_e164 = ${parsePhone(p.data.phone, region)?.e164 ?? null},
         email = ${email}, notes = ${p.data.notes || null}, blocked = ${p.data.blocked}
       where id = ${id} and shop_id = ${shopId}
     `
+    // which fields changed, never their values
+    const after = { name: p.data.name, phone: p.data.phone || null, email, notes: p.data.notes || null, blocked: p.data.blocked }
+    const fields = (Object.keys(after) as (keyof typeof after)[]).filter(k => after[k] !== before[k])
+    if (fields.length) await audit(sql, { shopId, actorUser: user.id, action: 'customer.update', targetType: 'customer', targetId: id, detail: { fields } })
   } catch (e) {
     if ((e as { code?: string }).code === '23505') return fail('duplicate_phone')
     throw e
@@ -451,12 +537,13 @@ const prefsSchema = z.object({
 
 /** The client's preference card: what they usually like, kept by the shop. */
 export async function savePreferencesAction(shopId: string, customerId: string, input: unknown): Promise<Result> {
-  await requireShop(shopId, 'manager')
+  const { user } = await requireShop(shopId, 'manager')
   const p = prefsSchema.safeParse(input)
   if (!p.success || !uuid.safeParse(customerId).success) return fail('invalid')
   const prefs = cleanPrefs({ ...p.data, shape: p.data.shape ?? undefined, length: p.data.length ?? undefined, finish: p.data.finish ?? undefined, staffId: p.data.staffId ?? null })
   if (prefs.staffId && !(await listStaff(shopId)).some(s => s.id === prefs.staffId)) return fail('invalid')
   if (!(await savePreferences(shopId, customerId, prefs))) return fail('not_found')
+  await audit(sql, { shopId, actorUser: user.id, action: 'customer.preferences', targetType: 'customer', targetId: customerId, detail: { fields: Object.keys(prefs) } })
   revalidatePath(`/dashboard/${shopId}/customers/${customerId}`)
   return { ok: true }
 }
@@ -492,7 +579,7 @@ export async function uploadGalleryAction(shopId: string, form: FormData): Promi
     return { ok: true, id: item.id, url }
   } catch (e) {
     if (e instanceof UploadError) return fail('upload', e.message)
-    console.error(e)
+    logError('action', e)
     return fail('server')
   }
 }

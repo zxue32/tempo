@@ -1,4 +1,4 @@
-import { hasHairTools, hasNailTools } from '@/lib/templates'
+import { shopHasHairTools, shopHasNailTools } from '@/lib/industries/shop'
 import { requireShop } from '@/lib/auth'
 import { getShop } from '@/lib/data/shops'
 import { listPalette, PALETTE_MAX } from '@/lib/data/rules'
@@ -11,7 +11,7 @@ export default async function PalettePage(props: PageProps<'/dashboard/[shopId]/
   const shop = (await getShop(shopId))!
   const { t } = await getT()
   const items = await listPalette(shopId)
-  const kinds = [...(hasHairTools(shop.industry) ? ['hair'] : []), ...(hasNailTools(shop.industry) ? ['nail'] : [])] as Array<'hair' | 'nail'>
+  const kinds = [...(shopHasHairTools(shop) ? ['hair'] : []), ...(shopHasNailTools(shop) ? ['nail'] : [])] as Array<'hair' | 'nail'>
   return (
     <div className="flex flex-col gap-5">
       <div>

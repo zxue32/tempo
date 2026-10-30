@@ -79,6 +79,53 @@ export function zonedToUtc(date: string, minutes: number, tz: string): Date {
   return new Date(Math.max(t1, t2)) // skipped hour: move forward
 }
 
+/**
+ * Clock changes on this local date (CORE-03): a `gap` is wall-clock time that never happens (clocks jump
+ * forward), a `repeat` is wall-clock time that happens twice (clocks go back). Minutes since local midnight,
+ * [from, to). `before`/`after` are the UTC offsets in minutes on each side of the change.
+ */
+export type DstRange = { kind: 'gap' | 'repeat'; from: number; to: number; before: number; after: number }
+
+export function dstRanges(date: string, tz: string): DstRange[] {
+  const { y, m, day } = parseDate(date)
+  // a day's clock change happens within these 48 UTC hours wherever the zone is
+  let lo = Date.UTC(y, m - 1, day) - 14 * 3600000
+  let hi = Date.UTC(y, m - 1, day) + 38 * 3600000
+  const offLo = tzOffsetMinutes(new Date(lo), tz)
+  const offHi = tzOffsetMinutes(new Date(hi), tz)
+  if (offLo === offHi) return []
+  while (hi - lo > 60000) { // the first instant with the new offset, to the minute
+    const mid = lo + Math.floor((hi - lo) / 120000) * 60000
+    if (tzOffsetMinutes(new Date(mid), tz) === offLo) lo = mid
+    else hi = mid
+  }
+  const lastOld = utcToZoned(new Date(lo), tz) // the last minute on the old offset
+  const wall = diffDays(lastOld.date, date) * 1440 + lastOld.min + 1 // wall clock (old offset) when it changes, relative to `date`
+  const shift = offHi - offLo
+  const r: DstRange = shift > 0
+    ? { kind: 'gap', from: wall, to: wall + shift, before: offLo, after: offHi }
+    : { kind: 'repeat', from: wall + shift, to: wall, before: offLo, after: offHi }
+  const from = Math.max(0, r.from), to = Math.min(1440, r.to)
+  return to > from ? [{ ...r, from, to }] : []
+}
+
+export type LocalResolution =
+  | { kind: 'ok'; utc: Date }
+  | { kind: 'gap' }
+  | { kind: 'ambiguous'; earlier: Date; later: Date }
+
+/** A local wall time → the instant it means, or why it doesn't name exactly one instant. */
+export function resolveLocal(date: string, minutes: number, tz: string): LocalResolution {
+  const { y, m, day } = parseDate(date)
+  const wall = Date.UTC(y, m - 1, day) + minutes * 60000
+  for (const r of dstRanges(date, tz)) {
+    if (minutes < r.from || minutes >= r.to) continue
+    if (r.kind === 'gap') return { kind: 'gap' }
+    return { kind: 'ambiguous', earlier: new Date(wall - r.before * 60000), later: new Date(wall - r.after * 60000) }
+  }
+  return { kind: 'ok', utc: zonedToUtc(date, minutes, tz) }
+}
+
 /** UTC instant -> local date + minutes in tz. */
 export function utcToZoned(instant: Date, tz: string): { date: string; min: number } {
   const p = zonedParts(instant, tz)
