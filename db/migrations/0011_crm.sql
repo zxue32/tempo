@@ -10,8 +10,8 @@ alter table app.customers add column if not exists source text not null default 
 alter table app.customers add column if not exists marketing_consent boolean not null default false;
 alter table app.customers add column if not exists marketing_consent_at timestamptz;
 alter table app.customers add column if not exists last_contacted_at timestamptz;
--- one-click unsubscribe from campaign emails; random, never derived from the id
-alter table app.customers add column if not exists unsubscribe_token text not null default translate(encode(gen_random_bytes(18), 'base64'), '+/', '-_')
+-- one-click unsubscribe from campaign emails; random (two v4 uuids, core Postgres), never derived from the id
+alter table app.customers add column if not exists unsubscribe_token text not null default left(replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''), 32)
   check (length(unsubscribe_token) between 16 and 64);
 create unique index if not exists customers_unsubscribe_key on app.customers (unsubscribe_token);
 create index if not exists customers_tags_idx on app.customers using gin (tags);
