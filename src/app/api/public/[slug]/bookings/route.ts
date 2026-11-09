@@ -25,6 +25,7 @@ const body = z.object({
   notes: z.string().max(1000).optional().default(''),
   photoUrl: z.string().max(500).nullable().optional(),
   lang: z.enum(['zh', 'en']),
+  marketing: z.boolean().optional(),   // opted into marketing email (CRM); never required
   website: z.string().optional(), // honeypot: real people never fill this
   lookId: z.string().uuid().nullable().optional(), // "book this look" from the gallery
   design: z.unknown().optional(),                   // "design your nails"; validated below
@@ -55,7 +56,7 @@ export async function POST(req: Request, ctx: RouteContext<'/api/public/[slug]/b
     const res = await createBooking({
       shop, mode: 'online', kind: 'online', date: d.date, start: d.start,
       guests: d.guests.map(({ serviceIds, addonIds, staffId }) => ({ serviceIds, addonIds, staffId })), intake: d.guests.map(g => g.intake ?? null),
-      contact: { name: d.name, phone: d.phone, email: d.email.toLowerCase() },
+      contact: { name: d.name, phone: d.phone, email: d.email.toLowerCase(), marketing: d.marketing === true },
       notes: trimOrNull(d.notes, 1000), photoUrl, lang: d.lang, design: isNailDesign(d.design) ? d.design : null,
     })
     if (d.session) await recordFunnel(shop.id, d.session, 'booked').catch(() => {})

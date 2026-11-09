@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { AmbientSpace } from './ambient';
+import { StarField } from './starfield';
+import { measureWristFade, applyWristFade, createWristGlow } from './wrist-fade';
+import { softenHandGeometry } from './hand-soften';
 import { NAIL_REGIONS, createNailShell, createNailPreparedHandGeometry } from './tripo-nails';
 import { createPolishMaterial, createNailStructureMaterial, createDecorations, disposePolishMaterial, repairPreparedNailBed } from './materials';
 import { createDefaultDesign } from './state';
@@ -43,11 +45,12 @@ export class NailScene {
   private geometrySignatures:string[]=[];
   private materialSignatures:string[]=[];
   private decorationSignatures:string[]=[];
-  private ambient:AmbientSpace;
+  private ambient:StarField;
   private envMap:THREE.WebGLRenderTarget;
-  private key=new THREE.DirectionalLight('#ffffff',1.8);
-  private fill=new THREE.DirectionalLight('#ffffff',.65);
-  private hemisphere=new THREE.HemisphereLight('#ffffff','#b8b0a7',.65);
+  private key=new THREE.DirectionalLight('#fff6ee',1.25);
+  private fill=new THREE.DirectionalLight('#f3ecff',.75);
+  private rim=new THREE.DirectionalLight('#9fb4ff',.9);
+  private hemisphere=new THREE.HemisphereLight('#fff1ea','#8b7f93',.9);
   private indicator=new THREE.Mesh(new THREE.SphereGeometry(.014,16,12),new THREE.MeshBasicMaterial({color:'#86465a'}));
   private design?:StudioDesign;
   private signatures:string[]=[];
@@ -56,6 +59,7 @@ export class NailScene {
   private view:'hand'|'detail'='hand';
   private original=false;
   private atmosphere=true;
+  private wristGlow?:THREE.Sprite;
   private loaded=false;
   private disposed=false;
   private visible=true;
@@ -84,9 +88,12 @@ export class NailScene {
     const bounce=new THREE.Mesh(new THREE.PlaneGeometry(4,6),new THREE.MeshBasicMaterial({color:new THREE.Color(.8,.82,.85),side:THREE.DoubleSide}));bounce.position.set(5,1,3);bounce.lookAt(0,0,0);room.add(bounce);
     this.envMap=pmrem.fromScene(room,.035);disposeTree(room);pmrem.dispose();
     this.scene.environment=this.envMap.texture;this.scene.environmentIntensity=.55;
-    this.key.position.set(-3,5,7);this.fill.position.set(4,1,4);this.scene.add(this.hemisphere,this.key,this.fill,this.model,this.indicator);this.indicator.visible=false;
-    this.ambient=new AmbientSpace(this.scene);
+    this.key.position.set(-3,5,7);this.fill.position.set(4,1,4);this.rim.position.set(1,3,-6);this.scene.add(this.hemisphere,this.key,this.fill,this.rim,this.model,this.indicator);this.indicator.visible=false;
+    this.ambient=new StarField(this.scene);this.ambient.setPixelRatio(this.renderer.getPixelRatio());
     this.controls=new OrbitControls(this.camera,this.canvas);this.controls.enableDamping=true;this.controls.dampingFactor=.14;this.controls.enablePan=false;this.controls.minDistance=1.3;this.controls.maxDistance=20;
+    // the hand is always seen from the nail side: swing left/right and tilt enough to see tips and sidewalls, never the palm
+    this.controls.minAzimuthAngle=THREE.MathUtils.degToRad(-62);this.controls.maxAzimuthAngle=THREE.MathUtils.degToRad(48);
+    this.controls.minPolarAngle=THREE.MathUtils.degToRad(28);this.controls.maxPolarAngle=THREE.MathUtils.degToRad(104);
     this.controls.addEventListener('start',this.onControlStart);
     this.resizeObserver=new ResizeObserver(this.resize);this.resizeObserver.observe(container);
     this.intersectionObserver=new IntersectionObserver(entries=>{this.visible=entries[0]?.isIntersecting??true;if(this.visible)this.startLoop();else this.stopLoop();},{rootMargin:'80px'});this.intersectionObserver.observe(container);
@@ -106,13 +113,31 @@ export class NailScene {
       // Calibrate only in the original asset frame; host normalization must never leak into fitting.
       const calibration=new THREE.Mesh(mesh.geometry,mesh.material);calibration.matrix.copy(mesh.matrixWorld);calibration.matrixAutoUpdate=false;calibration.updateMatrixWorld(true);
       this.calibration=calibration;this.displayMesh=mesh;this.originalGeometry=mesh.geometry;
-      const prepared=createNailPreparedHandGeometry(calibration);this.preparedGeometry=prepared;mesh.geometry=prepared;
+      const prepared=createNailPreparedHandGeometry(calibration);softenHandGeometry(prepared,calibration.matrixWorld);this.preparedGeometry=prepared;mesh.geometry=prepared;
       const initial=this.design??createDefaultDesign();
       const nailGeometries=initial.nails.map((nail,index)=>createNailShell(calibration,index,nail));
       if(nailGeometries.some(g=>g.getAttribute('position').count<3)){nailGeometries.forEach(g=>g.dispose());disposeTree(source);throw new Error('当前校准无法匹配这个模型，请使用配套的 Tripo 手模文件。');}
       const box=new THREE.Box3().setFromObject(source),center=box.getCenter(new THREE.Vector3()),scale=6.4/box.getSize(new THREE.Vector3()).y;
       this.model.scale.setScalar(scale);this.model.position.copy(center).multiplyScalar(-scale);this.model.add(source);this.source=source;
-      const mats=Array.isArray(mesh.material)?mesh.material:[mesh.material];mats.forEach(mat=>{if(mat instanceof THREE.MeshStandardMaterial){mat.envMapIntensity=.5;if(mat.normalMap)mat.normalScale.set(.65,.65);repairPreparedNailBed(mat,this.skinBedRepair);}});
+      // the forearm dissolves into the sky instead of ending in the scan's flat cut
+      const wristFade=measureWristFade(prepared,calibration.matrixWorld);
+      const wristGlow=createWristGlow();wristGlow.position.set(0,(box.min.y-center.y)*scale+.6,-.2);wristGlow.scale.set(6.4,4.2,1);this.scene.add(wristGlow);this.wristGlow=wristGlow;
+      // skin: a soft, slightly powdered look instead of the scan's harsh micro-relief
+      const skins=(Array.isArray(mesh.material)?mesh.material:[mesh.material]).map(mat=>{
+        if(!(mat instanceof THREE.MeshStandardMaterial))return mat;
+        const skin=new THREE.MeshPhysicalMaterial({map:mat.map,normalMap:mat.normalMap,roughnessMap:mat.roughnessMap,metalnessMap:mat.metalnessMap,color:'#ffe6dc',envMapIntensity:.42,roughness:.78,metalness:0,side:mat.side});
+        if(skin.normalMap)skin.normalScale.set(.22,.22);skin.sheen=.45;skin.sheenRoughness=.85;skin.sheenColor.set('#ffc9bd');
+        // the scan's colour map has veins and pores baked in: read it a little blurred and pull it towards an even tone
+        skin.onBeforeCompile=shader=>{shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`
+          #ifdef USE_MAP
+            vec4 sampledDiffuseColor = texture2D( map, vMapUv, 1.4 );
+            sampledDiffuseColor.rgb = mix( sampledDiffuseColor.rgb, vec3( .94, .78, .71 ), .16 );
+            diffuseColor *= sampledDiffuseColor;
+          #endif`);};
+        skin.customProgramCacheKey=()=>'lune-soft-skin-v1';
+        repairPreparedNailBed(skin,this.skinBedRepair);applyWristFade(skin,wristFade);mat.dispose();return skin;
+      });
+      mesh.material=skins.length===1?skins[0]:skins;
       for(let index=0;index<5;index++){
         const material=[createPolishMaterial(initial.nails[index],Math.min(8,this.renderer.capabilities.getMaxAnisotropy())),createNailStructureMaterial(initial.nails[index])];
         const nail=new THREE.Mesh(nailGeometries[index],material);nail.name=`polish_${index}`;nail.userData.nailIndex=index;this.nailMeshes.push(nail);this.model.add(nail);
@@ -157,7 +182,9 @@ export class NailScene {
     this.key.intensity=value==='studio'?1.35:1.8;this.scene.environmentIntensity=value==='studio'?.75:.55;this.renderer.toneMappingExposure=1;this.render();
   }
   setOriginal(value:boolean){this.endStroke();this.original=value;this.applyOriginalVisibility();this.updateMarker();this.render();}
-  setAtmosphere(value:boolean){this.atmosphere=value;this.ambient.setEnabled(value);this.render();}
+  setAtmosphere(value:boolean){this.atmosphere=value;this.setSky(value);this.render();}
+  /** Stars and the wrist glow are one idea: the night the hand rises out of. They switch together. */
+  private setSky(on:boolean){this.ambient.setEnabled(on);if(this.wristGlow)this.wristGlow.visible=on;}
   setMode(mode:'orbit'|'paint'){this.endStroke();this.mode=mode;this.controls.enabled=mode==='orbit';this.canvas.style.cursor=mode==='paint'?'crosshair':'grab';if(mode==='paint')this.setOriginal(false);this.updateMarker();}
   setView(view:'hand'|'detail'){this.view=view;this.moveCamera();}
   resetView(){this.view='hand';this.moveCamera(true);}
@@ -182,7 +209,7 @@ export class NailScene {
     const hits=this.raycaster.intersectObjects(this.nailMeshes,false);for(const hit of hits){const index=hit.object.userData.nailIndex as number;if(!hit.uv)continue;const mesh=hit.object as THREE.Mesh;const topTriangles=mesh.geometry.userData.topIndexCount/3;if(this.mode==='paint'&&(hit.faceIndex==null||hit.faceIndex>=topTriangles))continue;const uv={x:hit.uv.x,y:1-hit.uv.y};if(uv.x>=0&&uv.x<=1&&uv.y>=0&&uv.y<=1)return{index,...uv};}return null;
   }
   private onPointerDown=(e:PointerEvent)=>{if(e.button!==0||this.activeStroke)return;this.down={x:e.clientX,y:e.clientY};const hit=this.hit(e);if(this.mode==='paint'&&hit){e.preventDefault();this.callbacks.onSelect(hit.index);this.activeStroke={...hit,pointer:e.pointerId};this.canvas.setPointerCapture(e.pointerId);this.callbacks.onPaint(hit.index,{x:hit.x,y:hit.y},'start');}};
-  private onPointerMove=(e:PointerEvent)=>{if(!this.activeStroke||e.pointerId!==this.activeStroke.pointer)return;e.preventDefault();const hit=this.hit(e);if(hit?.index===this.activeStroke.index){Object.assign(this.activeStroke,{x:hit.x,y:hit.y});this.callbacks.onPaint(hit.index,{x:hit.x,y:hit.y},'move');}else this.endStroke();};
+  private onPointerMove=(e:PointerEvent)=>{if(!this.activeStroke&&!this.down){const r=this.canvas.getBoundingClientRect();this.ambient.nudge((e.clientX-r.left)/r.width*2-1,(e.clientY-r.top)/r.height*2-1);}if(!this.activeStroke||e.pointerId!==this.activeStroke.pointer)return;e.preventDefault();const hit=this.hit(e);if(hit?.index===this.activeStroke.index){Object.assign(this.activeStroke,{x:hit.x,y:hit.y});this.callbacks.onPaint(hit.index,{x:hit.x,y:hit.y},'move');}else this.endStroke();};
   private onPointerUp=(e:PointerEvent)=>{if(this.activeStroke?.pointer===e.pointerId)this.endStroke();else if(this.mode==='orbit'&&this.down&&Math.hypot(e.clientX-this.down.x,e.clientY-this.down.y)<5){const hit=this.hit(e);if(hit)this.callbacks.onSelect(hit.index);}this.down=undefined;};
   private onCancel=()=>{this.endStroke();this.down=undefined;};
   private endStroke(){const active=this.activeStroke;if(!active)return;this.activeStroke=undefined;this.callbacks.onPaint(active.index,{x:active.x,y:active.y},'end');if(this.canvas.hasPointerCapture(active.pointer))this.canvas.releasePointerCapture(active.pointer);}
@@ -196,8 +223,8 @@ export class NailScene {
   capture(){
     if(!this.loaded||this.contextLost)throw new Error('真实手模尚未就绪');
     const saved={position:this.camera.position.clone(),target:this.controls.target.clone(),targetPosition:this.targetPosition.clone(),targetLookAt:this.targetLookAt.clone(),view:this.view,original:this.original,marker:this.indicator.visible,transition:this.transition};
-    try{this.view='hand';this.moveCamera(true);this.original=false;this.applyOriginalVisibility();this.indicator.visible=false;this.ambient.setEnabled(false);this.render();return this.canvas.toDataURL('image/png');}
-    finally{this.camera.position.copy(saved.position);this.controls.target.copy(saved.target);this.controls.update();this.targetPosition.copy(saved.targetPosition);this.targetLookAt.copy(saved.targetLookAt);this.view=saved.view;this.original=saved.original;this.transition=saved.transition;this.applyOriginalVisibility();this.indicator.visible=saved.marker;this.ambient.setEnabled(this.atmosphere);this.render();}
+    try{this.view='hand';this.moveCamera(true);this.original=false;this.applyOriginalVisibility();this.indicator.visible=false;this.setSky(false);this.render();return this.canvas.toDataURL('image/png');}
+    finally{this.camera.position.copy(saved.position);this.controls.target.copy(saved.target);this.controls.update();this.targetPosition.copy(saved.targetPosition);this.targetLookAt.copy(saved.targetLookAt);this.view=saved.view;this.original=saved.original;this.transition=saved.transition;this.applyOriginalVisibility();this.indicator.visible=saved.marker;this.setSky(this.atmosphere);this.render();}
   }
   /** Render a real fingertip from this same hand; never substitutes a reference photograph. */
   renderNailThumbnail(nail:NailDesign,index=2):string {
@@ -209,9 +236,9 @@ export class NailScene {
       this.renderer.setPixelRatio(1);this.renderer.setSize(320,400,false);this.camera.aspect=.8;this.camera.updateProjectionMatrix();
       this.model.updateMatrixWorld(true);const region=NAIL_REGIONS[index],fit=this.fittedNail(index,1.30),target=fit.target,distance=fit.distance;
       this.camera.position.copy(target).addScaledVector(region.normal,distance).addScaledVector(region.right,distance*.10).addScaledVector(region.up,distance*.06);this.camera.up.copy(region.up);this.camera.lookAt(target);
-      this.indicator.visible=false;this.ambient.setEnabled(false);this.render();return this.canvas.toDataURL('image/jpeg',.88);
+      this.indicator.visible=false;this.setSky(false);this.render();return this.canvas.toDataURL('image/jpeg',.88);
     }finally{
-      this.original=saved.original;this.scene.background=saved.background;this.view='hand';this.update(saved.design,saved.selected);this.renderer.setPixelRatio(saved.ratio);this.renderer.setSize(size.x,size.y,false);this.camera.aspect=saved.aspect;this.camera.updateProjectionMatrix();this.camera.position.copy(saved.position);this.camera.up.copy(saved.up);this.controls.target.copy(saved.target);this.camera.lookAt(saved.target);this.targetPosition.copy(saved.targetPosition);this.targetLookAt.copy(saved.targetLookAt);this.view=saved.view;this.transition=saved.transition;this.indicator.visible=saved.marker;this.ambient.setEnabled(this.atmosphere);this.applyOriginalVisibility();this.render();
+      this.original=saved.original;this.scene.background=saved.background;this.view='hand';this.update(saved.design,saved.selected);this.renderer.setPixelRatio(saved.ratio);this.renderer.setSize(size.x,size.y,false);this.camera.aspect=saved.aspect;this.camera.updateProjectionMatrix();this.camera.position.copy(saved.position);this.camera.up.copy(saved.up);this.controls.target.copy(saved.target);this.camera.lookAt(saved.target);this.targetPosition.copy(saved.targetPosition);this.targetLookAt.copy(saved.targetLookAt);this.view=saved.view;this.transition=saved.transition;this.indicator.visible=saved.marker;this.setSky(this.atmosphere);this.applyOriginalVisibility();this.render();
     }
   }
   dispose(){

@@ -100,7 +100,7 @@ const EDITABLE = [
   'name', 'nameZh', 'aboutEn', 'aboutZh', 'theme', 'accent', 'logoUrl', 'coverUrl', 'phone', 'email', 'address', 'city',
   'mapUrl', 'instagram', 'timezone', 'defaultLang', 'hours', 'slotMinutes', 'leadMinutes', 'maxDays', 'cancelCutoffMinutes',
   'bufferMinutes', 'maxGuests', 'allowAnyStaff', 'showPrices', 'bookingNoteEn', 'bookingNoteZh', 'notifyEmails', 'notifyStaff',
-  'industry', 'walkinReserve', 'assignMode', 'turnsCountRequests', 'minGap', 'noshowLimit', 'waitlistEnabled', 'pilotBaseline',
+  'industry', 'walkinReserve', 'assignMode', 'turnsCountRequests', 'minGap', 'noshowLimit', 'waitlistEnabled', 'pilotBaseline', 'rebookDays',
 ] as const
 export type ShopPatch = Partial<Pick<Shop, (typeof EDITABLE)[number]>>
 

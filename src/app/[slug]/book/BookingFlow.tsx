@@ -73,7 +73,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
   const [slot, setSlot] = useState<SlotRes | null>(null)
   const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
-  const [form, setForm] = useState({ name: '', phone: '', email: '', notes: '', agree: false, website: '' })
+  const [form, setForm] = useState({ name: '', phone: '', email: '', notes: '', agree: false, marketing: false, website: '' })
   const [photo, setPhoto] = useState<string | null>(initial.look?.url ?? null)
   // what the customer sees: their own copy, because an uploaded reference photo is private to the shop (CORE-04)
   const [photoPreview, setPhotoPreview] = useState<string | null>(initial.look?.url ?? null)
@@ -278,7 +278,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
           }), date, start: slot.start,
           name: form.name.trim(), phone: form.phone.trim(), email: form.email.trim(),
           notes: [form.notes.trim(), lune ? `${t('lu.from3d')}「${lune.name}」: ${noteFromSummary(lune.summary)}` : design ? `${t('nd.yourDesign')}: ${describeDesign(design, t as (k: string) => string)}` : '', hairColor ? `${t('hc.chosen')}: ${hairColor.label}` : ''].filter(Boolean).join('\n').slice(0, 1000),
-          photoUrl, lookId: photoUrl ? null : lookId, lang, website: form.website, session: visitId(), design,
+          photoUrl, lookId: photoUrl ? null : lookId, lang, website: form.website, session: visitId(), design, marketing: form.marketing,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -398,7 +398,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
             <div className="flex flex-col gap-5">
               <div className="flex flex-col gap-2">
                 <h1 className="s-display text-[30px]">{t('bf.chooseServices')}</h1>
-                {shop.maxGuests > 1 && (
+                {shop.maxGuests > 1 && guests.length > 1 && (
                   <div className="flex flex-wrap items-center gap-2">
                     {guests.map((gs, i) => (
                       <span key={i} className="inline-flex items-center overflow-hidden rounded-full border s-line" style={i === g ? { borderColor: 'var(--s-ink)', boxShadow: 'inset 0 0 0 1px var(--s-ink)' } : {}}>
@@ -429,7 +429,7 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                         <span className="s-tick">✓</span>
                         <span className="min-w-0 flex-1">
                           <b className="block">{pick(lang, s.name, s.nameZh)}</b>
-                          <span className="block text-[13px] s-muted">{fmtDuration(s.durationMin, lang)}{pick(lang, s.descEn, s.descZh) ? ' · ' + pick(lang, s.descEn, s.descZh) : ''}</span>
+                          <span className="block text-[13px] s-muted">{fmtDuration(s.durationMin, lang)}{pick(lang, s.descEn, s.descZh) ? <Desc text={pick(lang, s.descEn, s.descZh)} open={on} /> : null}</span>
                         </span>
                         {shop.showPrices && s.priceCents != null && <b className="tnum">{s.priceFrom ? t('c.priceFrom', money(s.priceCents, shop.currency)) : money(s.priceCents, shop.currency)}</b>}
                       </button>
@@ -485,6 +485,12 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                   </section>
                 )
               })()}
+              {shop.maxGuests > 1 && guests.length === 1 && guest.serviceIds.length > 0 && (
+                <button type="button" className="self-start text-[13.5px] font-semibold" style={{ color: 'var(--s-accent)' }}
+                  onClick={() => { setGuests(l => [...l, { serviceIds: [], addonIds: [], staffId: shop.allowAnyStaff ? null : staff[0]?.id ?? null }]); setG(1); resetTime() }}>
+                  {t('bf.addGuest')}
+                </button>
+              )}
             </div>
           )}
 
@@ -671,6 +677,10 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
                   <input type="checkbox" className="h-5 w-5" style={{ accentColor: 'var(--s-accent)' }} checked={form.agree} onChange={e => setForm({ ...form, agree: e.target.checked })} />
                   {t('bf.agree')}
                 </label>
+                <label className="flex items-center gap-2 s-muted">
+                  <input type="checkbox" className="h-5 w-5" style={{ accentColor: 'var(--s-accent)' }} checked={form.marketing} onChange={e => setForm({ ...form, marketing: e.target.checked })} />
+                  {t('bf.marketing')}
+                </label>
               </div>
               {err && <p className="text-[14px] font-semibold" style={{ color: '#C2362B' }} role="alert">{err}</p>}
               <div className="flex flex-wrap gap-2">
@@ -701,6 +711,12 @@ export function BookingFlow({ shop, today, services, staff, skills, initial, ema
       {step === 3 && <div className="mt-6 lg:hidden">{summary}</div>}
     </div>
   )
+}
+
+/** A service's description: one short line while the card is unselected, the whole thing once it's picked. */
+function Desc({ text, open }: { text: string; open: boolean }) {
+  const short = text.length > 42 && !open
+  return <> · <span className={short ? 'inline-block max-w-[26ch] truncate align-bottom' : ''}>{text}</span></>
 }
 
 function PersonChip({ on, label, sub, color, letter, photo, onClick, disabled }: { on: boolean; label: string; sub: string; color: string; letter: string; photo?: string | null; onClick: () => void; disabled?: boolean }) {

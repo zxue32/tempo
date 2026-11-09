@@ -49,7 +49,7 @@ test('a design from the studio travels with the booking: note for the technician
   await page.locator('#bf-name').fill('Lune Tester')
   await page.locator('#bf-phone').fill(phone)
   await page.locator('#bf-email').fill('lune-tester@example.com')
-  await page.getByRole('checkbox').check()
+  await page.getByRole('checkbox', { name: 'I’ve read the booking notes' }).check()
   await page.getByRole('button', { name: 'Confirm booking' }).click()
   await page.waitForURL(/\/b\/[A-Za-z0-9_-]+/)
 
